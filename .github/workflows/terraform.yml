@@ -3,15 +3,13 @@ name: Terraform Cloudflare Infra
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "terraform/**"
   push:
     branches: [main]
+    paths:
+      - "terraform/**"
   workflow_dispatch:
-    inputs:
-      apply:
-        description: "Apply Terraform changes"
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -31,37 +29,29 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
       TF_STATE_BUCKET: ${{ secrets.TF_STATE_R2_BUCKET }}
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Validate required vars
         run: |
-          if [ -z "$TF_VAR_account_id" ]; then
-            echo "Missing repository secret: CLOUDFLARE_ACCOUNT_ID"
-            exit 1
-          fi
-          if [ -z "$TF_VAR_zone_name" ]; then
-            echo "Missing repository variable: CLOUDFLARE_ZONE_NAME"
-            exit 1
-          fi
-          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
-            echo "Missing repository secret: TF_STATE_R2_ACCESS_KEY_ID"
-            exit 1
-          fi
-          if [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-            echo "Missing repository secret: TF_STATE_R2_SECRET_ACCESS_KEY"
-            exit 1
-          fi
-          if [ -z "$TF_STATE_BUCKET" ]; then
-            echo "Missing repository secret: TF_STATE_R2_BUCKET"
+          missing=()
+          [ -z "$TF_VAR_account_id" ]    && missing+=("CLOUDFLARE_ACCOUNT_ID")
+          [ -z "$TF_VAR_zone_name" ]     && missing+=("CLOUDFLARE_ZONE_NAME")
+          [ -z "$AWS_ACCESS_KEY_ID" ]    && missing+=("TF_STATE_R2_ACCESS_KEY_ID")
+          [ -z "$AWS_SECRET_ACCESS_KEY" ] && missing+=("TF_STATE_R2_SECRET_ACCESS_KEY")
+          [ -z "$TF_STATE_BUCKET" ]      && missing+=("TF_STATE_R2_BUCKET")
+          if [ ${#missing[@]} -gt 0 ]; then
+            printf 'Missing: %s\n' "${missing[@]}"
             exit 1
           fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init (retry on registry/network failures)
+      - name: Terraform Init
         run: |
           set -e
           for attempt in 1 2 3; do
@@ -92,9 +82,63 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -input=false -no-color -out=tfplan
+        id: plan
+        run: |
+          set -o pipefail
+          terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt || EXIT_CODE=$?
+          if [ "${EXIT_CODE:-0}" -eq 2 ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform/plan_output.txt', 'utf8');
+            const truncated = plan.length > 60000
+              ? plan.slice(0, 60000) + '\n\n... (truncated)'
+              : plan;
+
+            const body = `### Terraform Plan
+            
+            \`\`\`
+            ${truncated}
+            \`\`\`
+            
+            *Pushed by @${context.actor} · Plan will auto-apply on merge to main.*`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user?.login === 'github-actions[bot]' &&
+              c.body?.startsWith('### Terraform Plan')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
       - name: Upload plan artifact
+        if: steps.plan.outputs.has_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ github.run_id }}
@@ -106,7 +150,7 @@ jobs:
     name: Apply
     runs-on: ubuntu-latest
     needs: plan
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true'
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.has_changes == 'true'
     environment:
       name: production
     defaults:
@@ -123,7 +167,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download plan artifact from this run
+      - name: Download plan artifact
         uses: actions/download-artifact@v4
         with:
           name: tfplan-${{ github.run_id }}
@@ -132,7 +176,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init (retry on registry/network failures)
+      - name: Terraform Init
         run: |
           set -e
           for attempt in 1 2 3; do
@@ -156,5 +200,5 @@ jobs:
           echo "terraform init failed after 3 attempts"
           exit 1
 
-      - name: Terraform Apply (from saved plan)
+      - name: Terraform Apply
         run: terraform apply -input=false tfplan

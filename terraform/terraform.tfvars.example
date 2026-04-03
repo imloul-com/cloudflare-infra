@@ -1,8 +1,4 @@
-account_id          = "your-cloudflare-account-id"
-zone_name           = "imloul.com"
+account_id         = "your-cloudflare-account-id"
+zone_name          = "imloul.com"
 
-portfolio_project_name = "portfolio"
-ast_viz_project_name   = "worker-ast-viz"
-
-ast_viz_mount_prefix = "/tools/ast-viz"
-router_worker_name   = "domain-router"
+router_worker_name = "domain-router"

@@ -4,3 +4,7 @@ terraform/backend.hcl
 terraform/terraform.tfstate
 terraform/terraform.tfstate.*
 .idea/
+
+worker/node_modules/
+worker/dist/
+worker/.wrangler/
