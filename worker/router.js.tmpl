@@ -1,0 +1,53 @@
+function stripPrefix(pathname, prefix) {
+  var next = pathname.replace(prefix, "") || "/";
+  return next.charAt(0) === "/" ? next : "/" + next;
+}
+
+function proxyToOrigin(request, origin, pathnameTransform) {
+  var incoming = new URL(request.url);
+  var target = new URL(origin);
+  target.pathname = pathnameTransform(incoming.pathname);
+  target.search = incoming.search;
+  return fetch(new Request(target.toString(), request));
+}
+
+var AST_VIZ_PREFIX = "${ast_viz_prefix}";
+var AST_VIZ_ORIGIN = "${ast_viz_origin}";
+var PORTFOLIO_ORIGIN = "${portfolio_origin}";
+
+var rules = [
+  {
+    matches: function (request) {
+      var pathname = new URL(request.url).pathname;
+      return pathname === AST_VIZ_PREFIX || pathname.indexOf(AST_VIZ_PREFIX + "/") === 0;
+    },
+    handle: function (request) {
+      return proxyToOrigin(request, AST_VIZ_ORIGIN, function (pathname) {
+        return stripPrefix(pathname, AST_VIZ_PREFIX);
+      });
+    },
+  },
+  {
+    matches: function () {
+      return true;
+    },
+    handle: function (request) {
+      return proxyToOrigin(request, PORTFOLIO_ORIGIN, function (pathname) {
+        return pathname;
+      });
+    },
+  },
+];
+
+addEventListener("fetch", function (event) {
+  var matchingRule = rules.find(function (rule) {
+    return rule.matches(event.request);
+  });
+
+  if (!matchingRule) {
+    event.respondWith(new Response("No matching route rule", { status: 500 }));
+    return;
+  }
+
+  event.respondWith(matchingRule.handle(event.request));
+});
