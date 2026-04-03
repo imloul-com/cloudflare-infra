@@ -61,18 +61,29 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init
-        run: >
-          terraform init -input=false -reconfigure
-          -backend-config="bucket=${TF_STATE_BUCKET}"
-          -backend-config="key=cloudflare-infra/terraform.tfstate"
-          -backend-config="region=us-east-1"
-          -backend-config="endpoint=https://${TF_VAR_account_id}.r2.cloudflarestorage.com"
-          -backend-config="skip_credentials_validation=true"
-          -backend-config="skip_region_validation=true"
-          -backend-config="skip_metadata_api_check=true"
-          -backend-config="skip_requesting_account_id=true"
-          -backend-config="force_path_style=true"
+      - name: Terraform Init (retry on registry/network failures)
+        run: |
+          set -e
+          for attempt in 1 2 3; do
+            echo "terraform init attempt ${attempt}/3"
+            if terraform init -input=false -reconfigure \
+              -backend-config="bucket=${TF_STATE_BUCKET}" \
+              -backend-config="key=cloudflare-infra/terraform.tfstate" \
+              -backend-config="region=us-east-1" \
+              -backend-config="endpoint=https://${TF_VAR_account_id}.r2.cloudflarestorage.com" \
+              -backend-config="skip_credentials_validation=true" \
+              -backend-config="skip_region_validation=true" \
+              -backend-config="skip_metadata_api_check=true" \
+              -backend-config="skip_requesting_account_id=true" \
+              -backend-config="force_path_style=true"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "terraform init failed after 3 attempts"
+          exit 1
 
       - name: Terraform Fmt
         run: terraform fmt -check
@@ -107,18 +118,29 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init
-        run: >
-          terraform init -input=false -reconfigure
-          -backend-config="bucket=${TF_STATE_BUCKET}"
-          -backend-config="key=cloudflare-infra/terraform.tfstate"
-          -backend-config="region=us-east-1"
-          -backend-config="endpoint=https://${TF_VAR_account_id}.r2.cloudflarestorage.com"
-          -backend-config="skip_credentials_validation=true"
-          -backend-config="skip_region_validation=true"
-          -backend-config="skip_metadata_api_check=true"
-          -backend-config="skip_requesting_account_id=true"
-          -backend-config="force_path_style=true"
+      - name: Terraform Init (retry on registry/network failures)
+        run: |
+          set -e
+          for attempt in 1 2 3; do
+            echo "terraform init attempt ${attempt}/3"
+            if terraform init -input=false -reconfigure \
+              -backend-config="bucket=${TF_STATE_BUCKET}" \
+              -backend-config="key=cloudflare-infra/terraform.tfstate" \
+              -backend-config="region=us-east-1" \
+              -backend-config="endpoint=https://${TF_VAR_account_id}.r2.cloudflarestorage.com" \
+              -backend-config="skip_credentials_validation=true" \
+              -backend-config="skip_region_validation=true" \
+              -backend-config="skip_metadata_api_check=true" \
+              -backend-config="skip_requesting_account_id=true" \
+              -backend-config="force_path_style=true"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "terraform init failed after 3 attempts"
+          exit 1
 
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve
