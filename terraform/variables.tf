@@ -20,18 +20,6 @@ variable "ast_viz_project_name" {
   default     = "worker-ast-viz"
 }
 
-variable "portfolio_subdomain" {
-  description = "Subdomain used as stable upstream for portfolio"
-  type        = string
-  default     = "portfolio"
-}
-
-variable "ast_viz_subdomain" {
-  description = "Subdomain used as stable upstream for ast-viz"
-  type        = string
-  default     = "ast-viz"
-}
-
 variable "ast_viz_mount_prefix" {
   description = "Path prefix mounted for ast-viz on the root domain"
   type        = string

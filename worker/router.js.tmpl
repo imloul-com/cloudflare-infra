@@ -24,6 +24,21 @@ var rules = [
     handle: function (request) {
       return proxyToOrigin(request, AST_VIZ_ORIGIN, function (pathname) {
         return stripPrefix(pathname, AST_VIZ_PREFIX);
+      }).then(function (response) {
+        var contentType = response.headers.get("content-type") || "";
+        if (contentType.indexOf("text/html") === -1) {
+          return response;
+        }
+        return response.text().then(function (html) {
+          var injected = html.replace(
+            "<head>",
+            '<head><script>window.__ROUTER_BASE__="' + AST_VIZ_PREFIX + '"</script>'
+          );
+          return new Response(injected, {
+            status: response.status,
+            headers: response.headers,
+          });
+        });
       });
     },
   },

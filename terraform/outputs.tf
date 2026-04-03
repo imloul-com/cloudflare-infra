@@ -7,11 +7,11 @@ output "ast_viz_pages_project" {
 }
 
 output "portfolio_origin" {
-  value = "https://${cloudflare_pages_domain.portfolio_domain.name}"
+  value = local.portfolio_origin
 }
 
 output "ast_viz_origin" {
-  value = "https://${cloudflare_pages_domain.ast_viz_domain.name}"
+  value = local.ast_viz_origin
 }
 
 output "resolved_portfolio_pages_subdomain" {
