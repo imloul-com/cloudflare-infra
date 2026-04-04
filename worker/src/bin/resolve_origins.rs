@@ -6,8 +6,10 @@ use std::fs;
 use url::Url;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouteDefinition {
+    prefix: String,
+    rewrite_prefix_to: String,
     project_name: String,
     origin_var: String,
 }
@@ -37,6 +39,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut deploy_var_args = String::new();
 
     for route in routes {
+        if !route.prefix.starts_with('/') {
+            return Err("each route must include a prefix starting with '/'".into());
+        }
+        if !route.rewrite_prefix_to.starts_with('/') {
+            return Err("each route must include rewritePrefixTo starting with '/'".into());
+        }
         if route.project_name.trim().is_empty() {
             return Err("each route must include a non-empty projectName".into());
         }

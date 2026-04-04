@@ -10,7 +10,7 @@ imloul.com/*
     ▼
 domain-router Worker (Rust, wasm)
     │
-    ├── /tools/ast-viz/*  → worker-ast-viz Pages (prefix stripped, <base> tag injected)
+    ├── /tools/ast-viz/*  → worker-ast-viz Pages (prefix rewritten to `/`, <base> tag injected)
     └── everything else   → portfolio Pages (passthrough)
 ```
 
@@ -105,5 +105,5 @@ npx wrangler deploy # production deploy
 ## Adding a new sub-app
 
 1. Deploy the app to Cloudflare Pages (its own repo + workflow)
-2. Add one entry to `worker/src/route-definitions.json` with `prefix`, `projectName`, `originVar`, and `stripPrefix`
+2. Add one entry to `worker/src/route-definitions.json` with `prefix`, `projectName`, `originVar`, and `rewritePrefixTo`
 3. Push to main — CI resolves the real `*.pages.dev` subdomain dynamically and deploys the worker with the new route

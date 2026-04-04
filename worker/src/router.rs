@@ -21,11 +21,7 @@ pub fn match_route(pathname: &str, routes: &[Route]) -> Option<RouteMatch> {
 
         let prefix_slash = route.prefix.clone() + "/";
         if pathname == route.prefix || pathname.starts_with(&prefix_slash) {
-            let new_path = if route.strip_prefix {
-                strip_prefix(pathname, &route.prefix)
-            } else {
-                pathname.to_string()
-            };
+            let new_path = rewrite_prefix(pathname, &route.prefix, &route.rewrite_prefix_to);
             let upstream = build_upstream_url(&route.origin, &new_path)?;
             return Some(RouteMatch {
                 route: route.clone(),
@@ -52,12 +48,22 @@ fn build_upstream_url(origin: &str, path: &str) -> Option<Url> {
     Url::parse(&s).ok()
 }
 
-fn strip_prefix(pathname: &str, prefix: &str) -> String {
-    let stripped = &pathname[prefix.len()..];
-    if stripped.is_empty() || !stripped.starts_with('/') {
-        format!("/{}", stripped)
+fn rewrite_prefix(pathname: &str, matched_prefix: &str, rewrite_prefix_to: &str) -> String {
+    let suffix = &pathname[matched_prefix.len()..];
+    if suffix.is_empty() {
+        return rewrite_prefix_to.to_string();
+    }
+
+    if rewrite_prefix_to == "/" {
+        return suffix.to_string();
+    }
+
+    if rewrite_prefix_to.ends_with('/') && suffix.starts_with('/') {
+        format!("{}{}", rewrite_prefix_to.trim_end_matches('/'), suffix)
+    } else if !rewrite_prefix_to.ends_with('/') && !suffix.starts_with('/') {
+        format!("{}/{}", rewrite_prefix_to, suffix)
     } else {
-        stripped.to_string()
+        format!("{}{}", rewrite_prefix_to, suffix)
     }
 }
 
@@ -71,6 +77,11 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
     // Capture headers before consuming the body
     let mut new_headers = Headers::new();
     for (key, val) in req.headers() {
+        // Prevent proxy loops: never forward the original Host header.
+        // The upstream URL host should be authoritative.
+        if key.eq_ignore_ascii_case("host") {
+            continue;
+        }
         new_headers.set(&key, &val)?;
     }
 
@@ -85,7 +96,7 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
     let upstream_req = Request::new_with_init(&upstream_url.to_string(), &init)?;
     let response = Fetch::Request(upstream_req).send().await?;
 
-    if m.route.strip_prefix && m.route.prefix != "/" {
+    if m.route.rewrite_prefix_to == "/" && m.route.prefix != "/" {
         let content_type = response
             .headers()
             .get("content-type")?
@@ -143,12 +154,12 @@ mod tests {
             Route {
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://worker-ast-viz.pages.dev".to_string(),
-                strip_prefix: true,
+                rewrite_prefix_to: "/".to_string(),
             },
             Route {
                 prefix: "/".to_string(),
                 origin: "https://portfolio.pages.dev".to_string(),
-                strip_prefix: false,
+                rewrite_prefix_to: "/".to_string(),
             },
         ]
     }
@@ -218,17 +229,17 @@ mod tests {
             Route {
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://ast.pages.dev".to_string(),
-                strip_prefix: true,
+                rewrite_prefix_to: "/".to_string(),
             },
             Route {
                 prefix: "/tools".to_string(),
                 origin: "https://tools.pages.dev".to_string(),
-                strip_prefix: true,
+                rewrite_prefix_to: "/".to_string(),
             },
             Route {
                 prefix: "/".to_string(),
                 origin: "https://root.pages.dev".to_string(),
-                strip_prefix: false,
+                rewrite_prefix_to: "/".to_string(),
             },
         ];
         assert_eq!(
@@ -242,18 +253,29 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_prefix_nested() {
-        assert_eq!(strip_prefix("/tools/ast-viz/page", "/tools/ast-viz"), "/page");
+    fn test_rewrite_prefix_nested_to_root() {
+        assert_eq!(
+            rewrite_prefix("/tools/ast-viz/page", "/tools/ast-viz", "/"),
+            "/page"
+        );
     }
 
     #[test]
-    fn test_strip_prefix_exact() {
-        assert_eq!(strip_prefix("/tools/ast-viz", "/tools/ast-viz"), "/");
+    fn test_rewrite_prefix_exact_to_root() {
+        assert_eq!(rewrite_prefix("/tools/ast-viz", "/tools/ast-viz", "/"), "/");
     }
 
     #[test]
-    fn test_strip_prefix_trailing_slash() {
-        assert_eq!(strip_prefix("/tools/ast-viz/", "/tools/ast-viz"), "/");
+    fn test_rewrite_prefix_trailing_slash_to_root() {
+        assert_eq!(rewrite_prefix("/tools/ast-viz/", "/tools/ast-viz", "/"), "/");
+    }
+
+    #[test]
+    fn test_rewrite_prefix_to_nested_path() {
+        assert_eq!(
+            rewrite_prefix("/legacy/blog/post", "/legacy/blog", "/blog"),
+            "/blog/post"
+        );
     }
 
     #[test]

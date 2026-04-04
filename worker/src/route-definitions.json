@@ -1,13 +1,13 @@
 [
   {
     "prefix": "/tools/ast-viz",
-    "stripPrefix": true,
+    "rewritePrefixTo": "/",
     "projectName": "worker-ast-viz",
     "originVar": "AST_VIZ_ORIGIN"
   },
   {
     "prefix": "/",
-    "stripPrefix": false,
+    "rewritePrefixTo": "/",
     "projectName": "portfolio",
     "originVar": "PORTFOLIO_ORIGIN"
   }
