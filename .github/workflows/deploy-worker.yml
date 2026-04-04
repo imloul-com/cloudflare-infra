@@ -9,6 +9,8 @@ on:
     branches: [main]
     paths:
       - "worker/**"
+  repository_dispatch:
+    types: [app-deployed]
   workflow_dispatch:
 
 concurrency:
@@ -40,7 +42,7 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
     defaults:
       run:
         working-directory: worker
@@ -83,6 +85,38 @@ jobs:
           key: npm-wrangler-4.14.0-${{ runner.os }}-${{ hashFiles('worker/wrangler.toml') }}
           restore-keys: |
             npm-wrangler-4.14.0-${{ runner.os }}-
+
+      - name: Assemble route definitions from app repos
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          route_defs="[]"
+          while IFS= read -r entry; do
+            repo=$(echo "$entry" | jq -r '.repo')
+
+            project_name=$(gh api "repos/${repo}/contents/wrangler.toml?ref=main" \
+              --jq '.content' | base64 -d \
+              | awk -F'"' '/^name[[:space:]]*=/ { print $2; exit }')
+
+            if [ -z "$project_name" ]; then
+              echo "Failed to read project name from ${repo}/wrangler.toml" >&2
+              exit 1
+            fi
+
+            route_def=$(echo "$entry" | jq --arg pn "$project_name" '. + {projectName: $pn} | del(.repo)')
+            route_defs=$(echo "$route_defs" | jq --argjson r "$route_def" '. + [$r]')
+          done < <(jq -c '.[]' src/app-sources.json)
+
+          echo "$route_defs" | jq '.' > src/route-definitions.json
+          echo "Assembled route definitions:"
+          cat src/route-definitions.json
+
+      - name: Inject route definitions into wrangler.toml
+        run: |
+          route_defs=$(jq -c '.' src/route-definitions.json)
+          printf "\n[vars]\nROUTE_DEFINITIONS = '%s'\n" "$route_defs" >> wrangler.toml
+          echo "Injected ROUTE_DEFINITIONS into wrangler.toml"
 
       - name: Resolve Pages origins
         id: origins

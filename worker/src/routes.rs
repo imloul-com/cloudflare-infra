@@ -19,20 +19,23 @@ pub struct Route {
 }
 
 pub fn build_routes(env: &Env) -> Vec<Route> {
-    let definitions: Vec<RouteDefinition> =
-        serde_json::from_str(include_str!("route-definitions.json"))
-            .expect("Invalid route-definitions.json");
+    let raw = env
+        .var("ROUTE_DEFINITIONS")
+        .expect("missing ROUTE_DEFINITIONS binding")
+        .to_string();
+
+    let mut definitions: Vec<RouteDefinition> =
+        serde_json::from_str(&raw).expect("invalid ROUTE_DEFINITIONS JSON");
 
     let mut seen_keys = HashSet::new();
     for def in &definitions {
         if !seen_keys.insert(def.route_key.as_str()) {
-            panic!(
-                "Invalid route-definitions.json: duplicate routeKey '{}'",
-                def.route_key
-            );
+            panic!("duplicate routeKey '{}'", def.route_key);
         }
-        validate_route_definition(def).expect("Invalid route-definitions.json");
+        validate_route_definition(def).expect("invalid ROUTE_DEFINITIONS");
     }
+
+    definitions.sort_by(|a, b| b.prefix.len().cmp(&a.prefix.len()));
 
     definitions
         .into_iter()

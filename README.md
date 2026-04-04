@@ -19,7 +19,7 @@ Two deployment pipelines, decoupled by design:
 - **Terraform** manages the Worker Route binding (`imloul.com/* → domain-router`) and DNS/zone settings.
 - **Wrangler** deploys the router Worker code independently — routing fixes ship in seconds without a Terraform cycle.
 
-Apps (`ast-viz`, `portfolio`) deploy their own assets to Cloudflare Pages via their own repos. They have zero knowledge of deployment paths or routing.
+Apps (`ast-viz`, `portfolio`) deploy their own assets to Cloudflare Pages via their own repos. They have no knowledge of routing — all routing decisions live in `app-sources.json` in this repo. The CI fetches each app's `projectName` from its `wrangler.toml` at deploy time. App deploys auto-trigger a router redeployment via `repository_dispatch`.
 
 ## Directory layout
 
@@ -35,8 +35,8 @@ cloudflare-infra/
 │   ├── src/
 │   │   ├── lib.rs      # Fetch entry point, health check, observability
 │   │   ├── router.rs   # Route matching, proxying, <base> injection
-│   │   ├── routes.rs   # Runtime route builder from route-definitions.json
-│   │   └── route-definitions.json # Single source of truth for routes/projects
+│   │   ├── routes.rs   # Runtime route builder from ROUTE_DEFINITIONS env var
+│   │   └── app-sources.json # Routing table + app repo references
 │   ├── Cargo.toml
 │   ├── Cargo.lock
 │   └── wrangler.toml
@@ -71,10 +71,11 @@ terraform apply
 
 ```bash
 cd worker
-cargo test        # run Rust unit tests
-cargo check       # fast compile checks
-npx wrangler dev  # local Worker dev
-npx wrangler deploy # production deploy
+cargo test           # run Rust unit tests
+cargo check          # fast compile checks
+make assemble-routes # fetch route configs from app repos (requires gh CLI)
+npx wrangler dev     # local Worker dev
+npx wrangler deploy  # production deploy
 ```
 
 ## GitHub Actions
@@ -88,8 +89,8 @@ npx wrangler deploy # production deploy
 ### deploy-worker.yml
 
 - **PR**: `cargo test`
-- **Push to main**: `cargo test` → `wrangler deploy`
-- Triggered only by changes to `worker/`
+- **Push to main**: `cargo test` → assemble route configs from app repos → resolve origins → `wrangler deploy`
+- Triggered by changes to `worker/`, `repository_dispatch` from app deploys, or manual dispatch
 
 ### Required repo settings
 
@@ -101,9 +102,11 @@ npx wrangler deploy # production deploy
 | Secret   | `TF_STATE_R2_BUCKET`          |
 | Secret   | `TF_STATE_R2_ACCESS_KEY_ID`   |
 | Secret   | `TF_STATE_R2_SECRET_ACCESS_KEY` |
+| Secret   | `CROSS_REPO_TOKEN`            |
 
 ## Adding a new sub-app
 
-1. Deploy the app to Cloudflare Pages (its own repo + workflow)
-2. Add one entry to `worker/src/route-definitions.json` with `routeKey`, `prefix`, `projectName`, and `rewritePrefixTo` (`routeKey` becomes `<ROUTE_KEY>_ORIGIN`)
-3. Push to main — CI resolves the real `*.pages.dev` subdomain dynamically and deploys the worker with the new route
+1. Deploy the app to Cloudflare Pages (its own repo + workflow, with `wrangler.toml` defining the project name)
+2. Add a `repository_dispatch` step to the app's deploy workflow (requires `INFRA_DISPATCH_TOKEN` secret)
+3. Add one entry to `worker/src/app-sources.json` with `repo`, `routeKey`, `prefix`, and `rewritePrefixTo`
+4. Push to main — CI fetches the project name from the app's `wrangler.toml`, resolves origins, and deploys the router

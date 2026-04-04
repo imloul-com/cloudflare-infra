@@ -10,3 +10,4 @@ worker/dist/
 worker/.wrangler/
 worker/target/
 worker/build/
+worker/src/route-definitions.json
