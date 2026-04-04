@@ -25,7 +25,7 @@ resource "cloudflare_ruleset" "global_rate_limit_all_pages" {
       characteristics     = ["ip.src", "cf.colo.id"]
       period              = 10
       requests_per_period = 50
-      mitigation_timeout  = 600
+      mitigation_timeout  = 10
     }
   }]
 }
