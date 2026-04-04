@@ -90,25 +90,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
         run: |
-          set -euo pipefail
-          route_defs="[]"
-          while IFS= read -r entry; do
-            repo=$(echo "$entry" | jq -r '.repo')
-
-            project_name=$(gh api "repos/${repo}/contents/wrangler.toml?ref=main" \
-              --jq '.content' | base64 -d \
-              | awk -F'"' '/^name[[:space:]]*=/ { print $2; exit }')
-
-            if [ -z "$project_name" ]; then
-              echo "Failed to read project name from ${repo}/wrangler.toml" >&2
-              exit 1
-            fi
-
-            route_def=$(echo "$entry" | jq --arg pn "$project_name" '. + {projectName: $pn} | del(.repo)')
-            route_defs=$(echo "$route_defs" | jq --argjson r "$route_def" '. + [$r]')
-          done < <(jq -c '.[]' src/app-sources.json)
-
-          echo "$route_defs" | jq '.' > src/route-definitions.json
+          make assemble-routes
           echo "Assembled route definitions:"
           cat src/route-definitions.json
 
