@@ -85,11 +85,16 @@ jobs:
         id: plan
         run: |
           set -o pipefail
+          EXIT_CODE=0
           terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt || EXIT_CODE=$?
-          if [ "${EXIT_CODE:-0}" -eq 2 ]; then
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EXIT_CODE" -eq 2 ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "terraform plan failed with exit code $EXIT_CODE" >&2
+            exit "$EXIT_CODE"
           fi
 
       - name: Post plan to PR
