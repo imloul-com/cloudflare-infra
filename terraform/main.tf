@@ -23,8 +23,8 @@ resource "cloudflare_ruleset" "global_rate_limit_all_pages" {
     action      = "managed_challenge"
     ratelimit = {
       characteristics     = ["ip.src", "cf.colo.id"]
-      period              = 60
-      requests_per_period = 300
+      period              = 10
+      requests_per_period = 50
       mitigation_timeout  = 600
     }
   }]
