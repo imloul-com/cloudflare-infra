@@ -8,7 +8,7 @@ Declarative Cloudflare infrastructure for the portfolio domain.
 imloul.com/*
     │
     ▼
-domain-router Worker (TypeScript, ES module)
+domain-router Worker (Rust, wasm)
     │
     ├── /tools/ast-viz/*  → worker-ast-viz Pages (prefix stripped, <base> tag injected)
     └── everything else   → portfolio Pages (passthrough)
@@ -31,19 +31,15 @@ cloudflare-infra/
 │   ├── outputs.tf
 │   ├── versions.tf
 │   └── backend.tf
-├── worker/             # Router Worker (TypeScript)
+├── worker/             # Router Worker (Rust)
 │   ├── src/
-│   │   ├── index.ts    # Entry point, health check, observability
-│   │   ├── router.ts   # Route matching, proxying, <base> injection
-│   │   ├── route-definitions.json # Single source of truth for routes/projects
-│   │   ├── routes.ts   # Runtime route builder from route-definitions.json
-│   │   └── types.ts
-│   ├── tests/
-│   │   ├── router.test.ts   # Unit tests for routing logic
-│   │   └── handler.test.ts  # Integration tests via SELF
-│   ├── wrangler.toml
-│   ├── package.json
-│   └── tsconfig.json
+│   │   ├── lib.rs      # Fetch entry point, health check, observability
+│   │   ├── router.rs   # Route matching, proxying, <base> injection
+│   │   ├── routes.rs   # Runtime route builder from route-definitions.json
+│   │   └── route-definitions.json # Single source of truth for routes/projects
+│   ├── Cargo.toml
+│   ├── Cargo.lock
+│   └── wrangler.toml
 └── .github/workflows/
     ├── terraform.yml       # Plan on PR (with comment), auto-apply on main
     └── deploy-worker.yml   # Test + deploy worker on changes to worker/
@@ -52,7 +48,8 @@ cloudflare-infra/
 ## Prerequisites
 
 - Terraform >= 1.6
-- Node.js >= 22 (for the worker project)
+- Rust toolchain (stable) with `wasm32-unknown-unknown` target
+- Node.js >= 22 (for Wrangler CLI usage)
 - `CLOUDFLARE_API_TOKEN` env var
 
 ## Terraform usage
@@ -74,11 +71,10 @@ terraform apply
 
 ```bash
 cd worker
-npm install
-npm test          # run vitest
-npm run typecheck # tsc --noEmit
-npm run dev       # wrangler dev (local)
-npm run deploy    # wrangler deploy (production)
+cargo test        # run Rust unit tests
+cargo check       # fast compile checks
+npx wrangler dev  # local Worker dev
+npx wrangler deploy # production deploy
 ```
 
 ## GitHub Actions
@@ -91,8 +87,8 @@ npm run deploy    # wrangler deploy (production)
 
 ### deploy-worker.yml
 
-- **PR**: `typecheck` + `test`
-- **Push to main**: `typecheck` + `test` → `wrangler deploy`
+- **PR**: `cargo test`
+- **Push to main**: `cargo test` → `wrangler deploy`
 - Triggered only by changes to `worker/`
 
 ### Required repo settings

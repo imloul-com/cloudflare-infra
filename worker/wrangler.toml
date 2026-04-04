@@ -1,3 +1,6 @@
 name = "domain-router"
-main = "src/index.ts"
+main = "build/worker/shim.mjs"
 compatibility_date = "2025-04-01"
+
+[build]
+command = "cargo install -q 'worker-build@^0.1' && worker-build --release"
