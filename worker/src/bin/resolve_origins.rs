@@ -1,5 +1,6 @@
 use reqwest::blocking::Client;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -8,10 +9,10 @@ use url::Url;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouteDefinition {
+    route_key: String,
     prefix: String,
     rewrite_prefix_to: String,
     project_name: String,
-    origin_var: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,8 +38,22 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let client = Client::builder().build()?;
     let mut deploy_var_args = String::new();
+    let mut seen_keys = HashSet::new();
 
     for route in routes {
+        if route.route_key.trim().is_empty() {
+            return Err("each route must include a non-empty routeKey".into());
+        }
+        if !route
+            .route_key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        {
+            return Err("each route routeKey must match [a-z0-9_]+".into());
+        }
+        if !seen_keys.insert(route.route_key.clone()) {
+            return Err(format!("duplicate routeKey: {}", route.route_key).into());
+        }
         if !route.prefix.starts_with('/') {
             return Err("each route must include a prefix starting with '/'".into());
         }
@@ -48,16 +63,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         if route.project_name.trim().is_empty() {
             return Err("each route must include a non-empty projectName".into());
         }
-        if route.origin_var.trim().is_empty() {
-            return Err("each route must include a non-empty originVar".into());
-        }
 
         let origin_url = resolve_origin(&client, &api_token, &account_id, &route.project_name)?;
-        deploy_var_args.push_str(&format!(" --var {}:{}", route.origin_var, origin_url));
+        deploy_var_args.push_str(&format!(
+            " --var {}:{}",
+            origin_var_name(&route.route_key),
+            origin_url
+        ));
     }
 
     println!("{}", deploy_var_args);
     Ok(())
+}
+
+fn origin_var_name(route_key: &str) -> String {
+    format!("{}_ORIGIN", route_key.to_ascii_uppercase())
 }
 
 fn parse_route_definitions_path(args: Vec<String>) -> String {

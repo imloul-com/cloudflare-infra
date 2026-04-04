@@ -1,14 +1,14 @@
 [
   {
+    "routeKey": "ast_viz",
     "prefix": "/tools/ast-viz",
     "rewritePrefixTo": "/",
-    "projectName": "worker-ast-viz",
-    "originVar": "AST_VIZ_ORIGIN"
+    "projectName": "ast-viz"
   },
   {
+    "routeKey": "portfolio",
     "prefix": "/",
     "rewritePrefixTo": "/",
-    "projectName": "portfolio",
-    "originVar": "PORTFOLIO_ORIGIN"
+    "projectName": "portfolio"
   }
 ]

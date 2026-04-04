@@ -105,5 +105,5 @@ npx wrangler deploy # production deploy
 ## Adding a new sub-app
 
 1. Deploy the app to Cloudflare Pages (its own repo + workflow)
-2. Add one entry to `worker/src/route-definitions.json` with `prefix`, `projectName`, `originVar`, and `rewritePrefixTo`
+2. Add one entry to `worker/src/route-definitions.json` with `routeKey`, `prefix`, `projectName`, and `rewritePrefixTo` (`routeKey` becomes `<ROUTE_KEY>_ORIGIN`)
 3. Push to main — CI resolves the real `*.pages.dev` subdomain dynamically and deploys the worker with the new route
