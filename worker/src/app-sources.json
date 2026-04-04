@@ -3,12 +3,12 @@
     "repo": "AnasImloul/aimloul-blog",
     "routeKey": "portfolio",
     "prefix": "/",
-    "rewritePrefixTo": "/"
+    "rewriteTo": "/"
   },
   {
     "repo": "AnasImloul/ast-viz",
     "routeKey": "ast_viz",
     "prefix": "/tools/ast-viz",
-    "rewritePrefixTo": "/"
+    "rewriteTo": "/"
   }
 ]

@@ -7,7 +7,7 @@ use worker::Env;
 struct RouteDefinition {
     route_key: String,
     prefix: String,
-    rewrite_prefix_to: String,
+    rewrite_to: String,
     project_name: String,
 }
 
@@ -15,7 +15,7 @@ struct RouteDefinition {
 pub struct Route {
     pub prefix: String,
     pub origin: String,
-    pub rewrite_prefix_to: String,
+    pub rewrite_to: String,
 }
 
 pub fn build_routes(env: &Env) -> Vec<Route> {
@@ -41,7 +41,7 @@ pub fn build_routes(env: &Env) -> Vec<Route> {
         .into_iter()
         .map(|def| Route {
             prefix: def.prefix,
-            rewrite_prefix_to: def.rewrite_prefix_to,
+            rewrite_to: def.rewrite_to,
             origin: env
                 .var(&origin_var_name(&def.route_key))
                 .map(|v| v.to_string())
@@ -54,7 +54,7 @@ fn validate_route_definition(def: &RouteDefinition) -> Result<(), String> {
     if !def.prefix.starts_with('/') {
         return Err("prefix must start with '/'".to_string());
     }
-    if !def.rewrite_prefix_to.starts_with('/') {
+    if !def.rewrite_to.starts_with('/') {
         return Err("rewritePrefixTo must start with '/'".to_string());
     }
     if def.route_key.trim().is_empty() {

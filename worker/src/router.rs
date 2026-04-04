@@ -21,7 +21,7 @@ pub fn match_route(pathname: &str, routes: &[Route]) -> Option<RouteMatch> {
 
         let prefix_slash = route.prefix.clone() + "/";
         if pathname == route.prefix || pathname.starts_with(&prefix_slash) {
-            let new_path = rewrite_prefix(pathname, &route.prefix, &route.rewrite_prefix_to);
+            let new_path = rewrite_prefix(pathname, &route.prefix, &route.rewrite_to);
             let upstream = build_upstream_url(&route.origin, &new_path)?;
             return Some(RouteMatch {
                 route: route.clone(),
@@ -48,22 +48,22 @@ fn build_upstream_url(origin: &str, path: &str) -> Option<Url> {
     Url::parse(&s).ok()
 }
 
-fn rewrite_prefix(pathname: &str, matched_prefix: &str, rewrite_prefix_to: &str) -> String {
+fn rewrite_prefix(pathname: &str, matched_prefix: &str, rewrite_to: &str) -> String {
     let suffix = &pathname[matched_prefix.len()..];
     if suffix.is_empty() {
-        return rewrite_prefix_to.to_string();
+        return rewrite_to.to_string();
     }
 
-    if rewrite_prefix_to == "/" {
+    if rewrite_to == "/" {
         return suffix.to_string();
     }
 
-    if rewrite_prefix_to.ends_with('/') && suffix.starts_with('/') {
-        format!("{}{}", rewrite_prefix_to.trim_end_matches('/'), suffix)
-    } else if !rewrite_prefix_to.ends_with('/') && !suffix.starts_with('/') {
-        format!("{}/{}", rewrite_prefix_to, suffix)
+    if rewrite_to.ends_with('/') && suffix.starts_with('/') {
+        format!("{}{}", rewrite_to.trim_end_matches('/'), suffix)
+    } else if !rewrite_to.ends_with('/') && !suffix.starts_with('/') {
+        format!("{}/{}", rewrite_to, suffix)
     } else {
-        format!("{}{}", rewrite_prefix_to, suffix)
+        format!("{}{}", rewrite_to, suffix)
     }
 }
 
@@ -96,7 +96,7 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
     let upstream_req = Request::new_with_init(&upstream_url.to_string(), &init)?;
     let response = Fetch::Request(upstream_req).send().await?;
 
-    if m.route.rewrite_prefix_to == "/" && m.route.prefix != "/" {
+    if m.route.rewrite_to == "/" && m.route.prefix != "/" {
         let content_type = response
             .headers()
             .get("content-type")?
@@ -154,12 +154,12 @@ mod tests {
             Route {
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://worker-ast-viz.pages.dev".to_string(),
-                rewrite_prefix_to: "/".to_string(),
+                rewrite_to: "/".to_string(),
             },
             Route {
                 prefix: "/".to_string(),
                 origin: "https://portfolio.pages.dev".to_string(),
-                rewrite_prefix_to: "/".to_string(),
+                rewrite_to: "/".to_string(),
             },
         ]
     }
@@ -229,17 +229,17 @@ mod tests {
             Route {
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://ast.pages.dev".to_string(),
-                rewrite_prefix_to: "/".to_string(),
+                rewrite_to: "/".to_string(),
             },
             Route {
                 prefix: "/tools".to_string(),
                 origin: "https://tools.pages.dev".to_string(),
-                rewrite_prefix_to: "/".to_string(),
+                rewrite_to: "/".to_string(),
             },
             Route {
                 prefix: "/".to_string(),
                 origin: "https://root.pages.dev".to_string(),
-                rewrite_prefix_to: "/".to_string(),
+                rewrite_to: "/".to_string(),
             },
         ];
         assert_eq!(
@@ -271,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rewrite_prefix_to_nested_path() {
+    fn test_rewrite_to_nested_path() {
         assert_eq!(
             rewrite_prefix("/legacy/blog/post", "/legacy/blog", "/blog"),
             "/blog/post"

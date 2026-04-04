@@ -108,5 +108,5 @@ npx wrangler deploy  # production deploy
 
 1. Deploy the app to Cloudflare Pages (its own repo + workflow, with `wrangler.toml` defining the project name)
 2. Add a `repository_dispatch` step to the app's deploy workflow (requires `INFRA_DISPATCH_TOKEN` secret)
-3. Add one entry to `worker/src/app-sources.json` with `repo`, `routeKey`, `prefix`, and `rewritePrefixTo`
+3. Add one entry to `worker/src/app-sources.json` with `repo`, `routeKey`, `prefix`, and `rewriteTo`
 4. Push to main — CI fetches the project name from the app's `wrangler.toml`, resolves origins, and deploys the router

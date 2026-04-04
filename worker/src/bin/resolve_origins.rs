@@ -11,7 +11,7 @@ use url::Url;
 struct RouteDefinition {
     route_key: String,
     prefix: String,
-    rewrite_prefix_to: String,
+    rewrite_to: String,
     project_name: String,
 }
 
@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !route.prefix.starts_with('/') {
             return Err("each route must include a prefix starting with '/'".into());
         }
-        if !route.rewrite_prefix_to.starts_with('/') {
+        if !route.rewrite_to.starts_with('/') {
             return Err("each route must include rewritePrefixTo starting with '/'".into());
         }
         if route.project_name.trim().is_empty() {
