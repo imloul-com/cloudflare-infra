@@ -20,7 +20,7 @@ resource "cloudflare_ruleset" "global_rate_limit_all_pages" {
     ref         = "rl_all_pages"
     description = "Protect Worker daily quota from abuse"
     expression  = "http.host eq \"${var.zone_name}\""
-    action      = "managed_challenge"
+    action      = "block"
     ratelimit = {
       characteristics     = ["ip.src", "cf.colo.id"]
       period              = 10
