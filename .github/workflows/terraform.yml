@@ -66,12 +66,12 @@ jobs:
               -backend-config="bucket=${TF_STATE_BUCKET}" \
               -backend-config="key=cloudflare-infra/terraform.tfstate" \
               -backend-config="region=us-east-1" \
-              -backend-config="endpoints.s3=https://${TF_VAR_account_id}.r2.cloudflarestorage.com" \
+              -backend-config="endpoint=https://${TF_VAR_account_id}.r2.cloudflarestorage.com" \
               -backend-config="skip_credentials_validation=true" \
               -backend-config="skip_region_validation=true" \
               -backend-config="skip_metadata_api_check=true" \
               -backend-config="skip_requesting_account_id=true" \
-              -backend-config="use_path_style=true"; then
+              -backend-config="force_path_style=true"; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
@@ -196,12 +196,12 @@ jobs:
               -backend-config="bucket=${TF_STATE_BUCKET}" \
               -backend-config="key=cloudflare-infra/terraform.tfstate" \
               -backend-config="region=us-east-1" \
-              -backend-config="endpoints.s3=https://${TF_VAR_account_id}.r2.cloudflarestorage.com" \
+              -backend-config="endpoint=https://${TF_VAR_account_id}.r2.cloudflarestorage.com" \
               -backend-config="skip_credentials_validation=true" \
               -backend-config="skip_region_validation=true" \
               -backend-config="skip_metadata_api_check=true" \
               -backend-config="skip_requesting_account_id=true" \
-              -backend-config="use_path_style=true"; then
+              -backend-config="force_path_style=true"; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
