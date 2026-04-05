@@ -1,0 +1,197 @@
+name: Deploy Apps
+
+on:
+  repository_dispatch:
+    types: [app-published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: false
+        default: "prod"
+        type: choice
+        options: [prod, dev]
+      version_override:
+        description: "Override version/tag for all apps (optional)"
+        required: false
+        default: ""
+        type: string
+      target_app_id:
+        description: "Deploy only this app id (optional)"
+        required: false
+        default: ""
+        type: string
+  push:
+    branches: [main, dev]
+    paths:
+      - "worker/apps.yaml"
+      - ".github/workflows/deploy-apps.yml"
+
+concurrency:
+  group: deploy-apps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.name }}
+      version_override: ${{ steps.env.outputs.version_override }}
+      target_app_id: ${{ steps.env.outputs.target_app_id }}
+      matrix: ${{ steps.catalog.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: worker
+
+      - name: Validate app catalog
+        working-directory: worker
+        run: cargo run --quiet --bin validate_catalog -- --app-sources-path apps.yaml
+
+      - name: Determine app deploy inputs
+        id: env
+        run: |
+          target_app_id=""
+          version_override=""
+          env_name="prod"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            env_name="${{ inputs.environment }}"
+            version_override="${{ inputs.version_override }}"
+            target_app_id="${{ inputs.target_app_id }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            env_name="${{ github.event.client_payload.environment }}"
+            version_override="${{ github.event.client_payload.version_override }}"
+            published_app="${{ github.event.client_payload.app }}"
+            target_app_id="${published_app##*/}"
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            env_name="dev"
+          fi
+
+          if [ -z "$env_name" ]; then
+            env_name="prod"
+          fi
+
+          echo "name=$env_name" >> "$GITHUB_OUTPUT"
+          echo "version_override=$version_override" >> "$GITHUB_OUTPUT"
+          echo "target_app_id=$target_app_id" >> "$GITHUB_OUTPUT"
+
+      - name: Build app deployment matrix from catalog
+        id: catalog
+        run: |
+          while IFS= read -r name; do
+            if ! grep -q "\"${name}\"" terraform/variables.tf; then
+              echo "Terraform variables drift: missing project name '${name}'" >&2
+              exit 1
+            fi
+          done < <(yq -o json '.' worker/apps.yaml | jq -r '.apps[].env.prod.pages')
+
+          if [ -n "${{ steps.env.outputs.target_app_id }}" ]; then
+            matrix=$(yq -o json '.' worker/apps.yaml | jq -c --arg target "${{ steps.env.outputs.target_app_id }}" '.apps | map(select(.id == $target) | {appId: .id, projectName: .env.prod.pages, devProjectName: .env.dev.pages, image, prodVersion: .env.prod.version, devVersion: .env.dev.version})')
+            if [ "$matrix" = "[]" ]; then
+              echo "app '${{ steps.env.outputs.target_app_id }}' not found in worker/apps.yaml" >&2
+              exit 1
+            fi
+          else
+            matrix=$(yq -o json '.' worker/apps.yaml | jq -c '.apps | map({appId: .id, projectName: .env.prod.pages, devProjectName: .env.dev.pages, image, prodVersion: .env.prod.version, devVersion: .env.dev.version})')
+            if [ -z "$matrix" ] || [ "$matrix" = "[]" ]; then
+              echo "app catalog is empty" >&2
+              exit 1
+            fi
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  deploy_apps:
+    name: Deploy app ${{ matrix.appId }}
+    runs-on: ubuntu-latest
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    env:
+      TARGET_ENV: ${{ needs.prepare.outputs.environment }}
+      VERSION_OVERRIDE: ${{ needs.prepare.outputs.version_override }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Pages project
+        id: pages
+        run: |
+          if [ "${TARGET_ENV}" = "dev" ]; then
+            echo "name=${{ matrix.devProjectName }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ matrix.projectName }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine artifact version
+        id: version
+        run: |
+          if [ -n "${VERSION_OVERRIDE}" ]; then
+            version="${VERSION_OVERRIDE}"
+          elif [ "${TARGET_ENV}" = "dev" ]; then
+            version="${{ matrix.devVersion }}"
+          else
+            version="${{ matrix.prodVersion }}"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+        run: |
+          set -euo pipefail
+          username="${GHCR_USERNAME:-${{ github.repository_owner }}}"
+          echo "${{ secrets.CROSS_REPO_TOKEN }}" | oras login ghcr.io -u "${username}" --password-stdin
+
+      - name: Pull app artifact from GHCR
+        run: |
+          set -euo pipefail
+          mkdir -p .artifact
+          cd .artifact
+          artifact_ref="${{ matrix.image }}:${{ steps.version.outputs.value }}"
+          echo "Pulling ${artifact_ref}"
+          oras pull "${artifact_ref}"
+          artifact_file="$(find . -type f -name '*.tar.gz' | head -n 1)"
+          if [ -z "${artifact_file}" ]; then
+            echo "No .tar.gz artifact found in ${artifact_ref}" >&2
+            exit 1
+          fi
+          echo "Using artifact archive: ${artifact_file}"
+          mkdir -p app_build
+          tar -xzf "${artifact_file}" -C app_build
+
+      - name: Check if Pages project exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PROJECT_NAME: ${{ steps.pages.outputs.name }}
+        run: |
+          status_code=$(curl -sS -o /tmp/cf-pages-project.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CLOUDFLARE_PROJECT_NAME}")
+          if [ "$status_code" != "200" ]; then
+            echo "Missing Terraform-managed Pages project: ${CLOUDFLARE_PROJECT_NAME}" >&2
+            cat /tmp/cf-pages-project.json
+            exit 1
+          fi
+
+      - name: Deploy app to Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.80.0"
+          command: pages deploy .artifact/app_build --project-name ${{ steps.pages.outputs.name }} --branch main --commit-dirty=true

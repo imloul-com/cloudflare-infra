@@ -117,7 +117,7 @@ fn normalize_prefix(prefix: &str) -> String {
 
 fn parse_app_sources_path(args: Vec<String>) -> String {
     let mut i = 1usize;
-    let mut path = String::from("worker/src/apps.yaml");
+    let mut path = String::from("apps.yaml");
 
     while i < args.len() {
         if args[i] == "--app-sources-path" && i + 1 < args.len() {
