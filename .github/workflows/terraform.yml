@@ -39,7 +39,7 @@ jobs:
       has_changes: ${{ steps.has_changes.outputs.has_changes }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate required vars
         run: |
@@ -195,7 +195,7 @@ jobs:
       TF_STATE_BUCKET: ${{ secrets.TF_STATE_R2_BUCKET }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download plan artifact
         uses: actions/download-artifact@v4

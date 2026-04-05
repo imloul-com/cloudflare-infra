@@ -46,7 +46,7 @@ jobs:
       router_artifact_tag: ${{ steps.env.outputs.router_artifact_tag }}
       matrix: ${{ steps.catalog.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
@@ -181,7 +181,7 @@ jobs:
       TARGET_ENV: ${{ needs.prepare.outputs.environment }}
       VERSION_OVERRIDE: ${{ needs.prepare.outputs.version_override }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select Pages project
         id: pages
@@ -265,7 +265,7 @@ jobs:
       run:
         working-directory: worker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup ORAS
         uses: oras-project/setup-oras@v1
