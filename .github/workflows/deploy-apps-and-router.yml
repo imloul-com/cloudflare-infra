@@ -142,11 +142,12 @@ jobs:
           artifact_ref="${{ matrix.image }}:${{ steps.version.outputs.value }}"
           echo "Pulling ${artifact_ref}"
           oras pull "${artifact_ref}"
-          artifact_file="$(ls -1 *.tar.gz | head -n 1)"
+          artifact_file="$(find . -type f -name '*.tar.gz' | head -n 1)"
           if [ -z "${artifact_file}" ]; then
             echo "No .tar.gz artifact found in ${artifact_ref}" >&2
             exit 1
           fi
+          echo "Using artifact archive: ${artifact_file}"
           mkdir -p app_build
           tar -xzf "${artifact_file}" -C app_build
 
