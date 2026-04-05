@@ -1,6 +1,8 @@
 name: Deploy Apps and Router
 
 on:
+  repository_dispatch:
+    types: [app-published]
   workflow_dispatch:
     inputs:
       environment:
@@ -50,12 +52,19 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             env_name="${{ inputs.environment }}"
             version_override="${{ inputs.version_override }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            env_name="${{ github.event.client_payload.environment }}"
+            version_override="${{ github.event.client_payload.version_override }}"
           elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
             env_name="dev"
             version_override=""
           else
             env_name="prod"
             version_override=""
+          fi
+
+          if [ -z "$env_name" ]; then
+            env_name="prod"
           fi
 
           if [ "$env_name" = "dev" ]; then
