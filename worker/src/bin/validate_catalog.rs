@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashSet;
+use std::env;
 use std::error::Error;
 use std::fs;
 
@@ -55,7 +56,7 @@ struct EnvEntry {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let path = "src/apps.yaml";
+    let path = parse_app_sources_path(env::args().collect());
     let raw = fs::read_to_string(path)?;
     let catalog: AppCatalog = serde_yaml::from_str(&raw)?;
 
@@ -122,6 +123,22 @@ fn ensure_non_empty(value: &str, field_name: &str) -> Result<(), Box<dyn Error>>
         return Err(format!("{field_name} must be non-empty").into());
     }
     Ok(())
+}
+
+fn parse_app_sources_path(args: Vec<String>) -> String {
+    let mut i = 1usize;
+    let mut path = String::from("apps.yaml");
+
+    while i < args.len() {
+        if args[i] == "--app-sources-path" && i + 1 < args.len() {
+            path = args[i + 1].clone();
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+
+    path
 }
 
 fn default_route_rewrite() -> String {

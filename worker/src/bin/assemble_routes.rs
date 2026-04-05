@@ -92,7 +92,7 @@ fn project_name_for_environment(env: &EnvConfig, environment: &str) -> String {
 }
 
 fn parse_args(args: Vec<String>) -> (String, String, String) {
-    let mut app_sources = String::from("src/apps.yaml");
+    let mut app_sources = String::from("apps.yaml");
     let mut output = String::from("src/route-definitions.json");
     let mut environment = String::from("prod");
     let mut i = 1;

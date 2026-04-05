@@ -5,6 +5,8 @@ on:
     branches: [main, dev]
     paths:
       - "worker/src/**"
+      - "worker/apps.yaml"
+      - "worker/wrangler.deploy.toml"
       - "worker/Cargo.toml"
       - "worker/Cargo.lock"
       - "worker/wrangler.toml"
