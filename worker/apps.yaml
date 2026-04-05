@@ -12,7 +12,7 @@ apps:
 
   - id: ast-viz
     image: ghcr.io/imloul-com/ast-viz-static
-    route: /tools/ast-viz
+    route: /tools/ast-viz/live
     env:
       prod:
         version: prod-latest
