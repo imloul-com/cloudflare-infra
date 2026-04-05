@@ -2,3 +2,10 @@ account_id         = "your-cloudflare-account-id"
 zone_name          = "imloul.com"
 
 router_worker_name = "domain-router"
+dev_router_worker_name = "domain-router-dev"
+dev_subdomain      = "dev"
+
+portfolio_pages_project_name = "portfolio"
+ast_viz_pages_project_name   = "ast-viz"
+dev_project_suffix           = "-dev"
+manage_prod_pages_projects   = false

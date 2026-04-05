@@ -23,7 +23,7 @@ struct RouteDefinition {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let (app_sources_path, output_path) = parse_args(env::args().collect());
+    let (app_sources_path, output_path, repo_ref, project_suffix) = parse_args(env::args().collect());
     let github_token = env::var("GH_TOKEN")
         .or_else(|_| env::var("GITHUB_TOKEN"))
         .map_err(|_| "missing GH_TOKEN or GITHUB_TOKEN environment variable")?;
@@ -38,7 +38,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut route_defs = Vec::with_capacity(sources.len());
 
     for source in sources {
-        let project_name = fetch_project_name(&client, &github_token, &source.repo)?;
+        let project_name = format!(
+            "{}{}",
+            fetch_project_name(&client, &github_token, &source.repo, &repo_ref)?,
+            project_suffix
+        );
         eprintln!("{} -> projectName={}", source.repo, project_name);
 
         route_defs.push(RouteDefinition {
@@ -56,10 +60,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn fetch_project_name(client: &Client, token: &str, repo: &str) -> Result<String, Box<dyn Error>> {
+fn fetch_project_name(
+    client: &Client,
+    token: &str,
+    repo: &str,
+    repo_ref: &str,
+) -> Result<String, Box<dyn Error>> {
     let url = format!(
-        "https://api.github.com/repos/{}/contents/wrangler.toml?ref=main",
-        repo
+        "https://api.github.com/repos/{}/contents/wrangler.toml?ref={}",
+        repo, repo_ref
     );
 
     let toml_content = client
@@ -92,9 +101,11 @@ fn extract_toml_name(toml: &str) -> Option<String> {
     None
 }
 
-fn parse_args(args: Vec<String>) -> (String, String) {
+fn parse_args(args: Vec<String>) -> (String, String, String, String) {
     let mut app_sources = String::from("src/app-sources.json");
     let mut output = String::from("src/route-definitions.json");
+    let mut repo_ref = String::from("main");
+    let mut project_suffix = String::new();
     let mut i = 1;
 
     while i < args.len() {
@@ -107,9 +118,17 @@ fn parse_args(args: Vec<String>) -> (String, String) {
                 output = args[i + 1].clone();
                 i += 2;
             }
+            "--repo-ref" if i + 1 < args.len() => {
+                repo_ref = args[i + 1].clone();
+                i += 2;
+            }
+            "--project-suffix" if i + 1 < args.len() => {
+                project_suffix = args[i + 1].clone();
+                i += 2;
+            }
             _ => i += 1,
         }
     }
 
-    (app_sources, output)
+    (app_sources, output, repo_ref, project_suffix)
 }

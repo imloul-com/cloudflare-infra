@@ -2,11 +2,11 @@ name: Terraform Cloudflare Infra
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "terraform/**"
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "terraform/**"
   workflow_dispatch:
@@ -36,7 +36,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
       TF_STATE_BUCKET: ${{ secrets.TF_STATE_R2_BUCKET }}
     outputs:
-      has_changes: ${{ steps.plan.outputs.has_changes }}
+      has_changes: ${{ steps.has_changes.outputs.has_changes }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -97,20 +97,27 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        id: plan
+        id: tf_plan
         run: |
           set -o pipefail
           EXIT_CODE=0
           terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt || EXIT_CODE=$?
 
-          if [ "$EXIT_CODE" -eq 0 ]; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          elif [ "$EXIT_CODE" -eq 2 ]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 2 ]; then
             echo "terraform plan failed with exit code $EXIT_CODE" >&2
             exit "$EXIT_CODE"
           fi
+
+      - name: Detect whether plan has changes
+        id: has_changes
+        run: |
+          change_count=$(terraform show -json tfplan | jq '.resource_changes | length')
+          if [ "$change_count" -gt 0 ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected resource_changes count: $change_count"
 
       - name: Post plan to PR
         if: github.event_name == 'pull_request'
@@ -158,7 +165,7 @@ jobs:
             }
 
       - name: Upload plan artifact
-        if: steps.plan.outputs.has_changes == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_apply)
+        if: (github.event_name == 'push' && steps.has_changes.outputs.has_changes == 'true') || (github.event_name == 'workflow_dispatch' && inputs.force_apply)
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ github.run_id }}
@@ -170,12 +177,12 @@ jobs:
     name: Apply
     runs-on: ubuntu-latest
     needs: plan
-    if: github.ref == 'refs/heads/main' && (needs.plan.outputs.has_changes == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_apply))
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && (needs.plan.outputs.has_changes == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_apply))
     concurrency:
-      group: terraform-apply-production
+      group: terraform-apply-${{ github.ref_name }}
       cancel-in-progress: false
     environment:
-      name: production
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
     defaults:
       run:
         working-directory: terraform
