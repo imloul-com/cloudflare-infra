@@ -96,6 +96,14 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: worker
+
       - name: Setup ORAS
         uses: oras-project/setup-oras@v1
 
