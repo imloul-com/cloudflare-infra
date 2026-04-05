@@ -142,18 +142,18 @@ jobs:
               echo "Terraform variables drift: missing project name '${name}'" >&2
               exit 1
             fi
-          done < <(jq -r '.apps[].pages.projectName' worker/src/app-sources.json)
+          done < <(jq -r '.apps[].pages.prod' worker/src/app-sources.json)
 
           if [ "${{ steps.env.outputs.deploy_apps }}" != "true" ]; then
             matrix='[]'
           elif [ -n "${{ steps.env.outputs.target_app_id }}" ]; then
-            matrix=$(jq -c --arg target "${{ steps.env.outputs.target_app_id }}" '.apps | map(select(.appId == $target) | {appId, projectName: .pages.projectName, devProjectName: .pages.devProjectName, image: .registry.image, prodVersion: .deploy.prodVersion, devVersion: .deploy.devVersion})' worker/src/app-sources.json)
+            matrix=$(jq -c --arg target "${{ steps.env.outputs.target_app_id }}" '.apps | map(select(.id == $target) | {appId: .id, projectName: .pages.prod, devProjectName: .pages.dev, image, prodVersion: .versions.prod, devVersion: .versions.dev})' worker/src/app-sources.json)
             if [ "$matrix" = "[]" ]; then
               echo "app '${{ steps.env.outputs.target_app_id }}' not found in worker/src/app-sources.json" >&2
               exit 1
             fi
           else
-            matrix=$(jq -c '.apps | map({appId, projectName: .pages.projectName, devProjectName: .pages.devProjectName, image: .registry.image, prodVersion: .deploy.prodVersion, devVersion: .deploy.devVersion})' worker/src/app-sources.json)
+            matrix=$(jq -c '.apps | map({appId: .id, projectName: .pages.prod, devProjectName: .pages.dev, image, prodVersion: .versions.prod, devVersion: .versions.dev})' worker/src/app-sources.json)
             if [ -z "$matrix" ] || [ "$matrix" = "[]" ]; then
               echo "app catalog is empty" >&2
               exit 1

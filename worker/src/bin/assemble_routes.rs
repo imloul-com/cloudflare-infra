@@ -4,31 +4,27 @@ use std::error::Error;
 use std::fs;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct AppCatalog {
     apps: Vec<AppDefinition>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct AppDefinition {
     route: RouteConfig,
     pages: PagesConfig,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct RouteConfig {
-    route_key: String,
+    key: String,
     prefix: String,
-    rewrite_to: String,
+    rewrite: String,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct PagesConfig {
-    project_name: String,
-    dev_project_name: String,
+    prod: String,
+    dev: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,9 +51,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let project_name = project_name_for_environment(&source.pages, &environment);
 
         route_defs.push(RouteDefinition {
-            route_key: source.route.route_key,
+            route_key: source.route.key,
             prefix: source.route.prefix,
-            rewrite_to: source.route.rewrite_to,
+            rewrite_to: source.route.rewrite,
             project_name,
         });
     }
@@ -71,9 +67,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn project_name_for_environment(pages: &PagesConfig, environment: &str) -> String {
     if environment == "dev" {
-        pages.dev_project_name.clone()
+        pages.dev.clone()
     } else {
-        pages.project_name.clone()
+        pages.prod.clone()
     }
 }
 

@@ -1,41 +1,37 @@
 {
   "apps": [
     {
-      "appId": "aimloul-blog",
-      "registry": {
-        "image": "ghcr.io/imloul-com/aimloul-blog-static"
-      },
-      "deploy": {
-        "prodVersion": "prod-latest",
-        "devVersion": "dev-latest"
+      "id": "aimloul-blog",
+      "image": "ghcr.io/imloul-com/aimloul-blog-static",
+      "versions": {
+        "prod": "prod-latest",
+        "dev": "dev-latest"
       },
       "route": {
-        "routeKey": "portfolio",
+        "key": "portfolio",
         "prefix": "/",
-        "rewriteTo": "/"
+        "rewrite": "/"
       },
       "pages": {
-        "projectName": "portfolio",
-        "devProjectName": "portfolio-dev"
+        "prod": "portfolio",
+        "dev": "portfolio-dev"
       }
     },
     {
-      "appId": "ast-viz",
-      "registry": {
-        "image": "ghcr.io/imloul-com/ast-viz-static"
-      },
-      "deploy": {
-        "prodVersion": "prod-latest",
-        "devVersion": "dev-latest"
+      "id": "ast-viz",
+      "image": "ghcr.io/imloul-com/ast-viz-static",
+      "versions": {
+        "prod": "prod-latest",
+        "dev": "dev-latest"
       },
       "route": {
-        "routeKey": "ast-viz",
+        "key": "ast-viz",
         "prefix": "/tools/ast-viz",
-        "rewriteTo": "/"
+        "rewrite": "/"
       },
       "pages": {
-        "projectName": "ast-viz",
-        "devProjectName": "ast-viz-dev"
+        "prod": "ast-viz",
+        "dev": "ast-viz-dev"
       }
     }
   ]
