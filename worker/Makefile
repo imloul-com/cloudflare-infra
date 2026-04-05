@@ -1,14 +1,16 @@
-.PHONY: test check dev deploy resolve-origins assemble-routes
+.PHONY: test check validate-catalog dev deploy resolve-origins assemble-routes
 
 ROUTE_DEFINITIONS_PATH ?= src/route-definitions.json
-REPO_REF ?= main
-PROJECT_SUFFIX ?=
+ENVIRONMENT ?= prod
 
 test:
 	cargo test
 
 check:
 	cargo check
+
+validate-catalog:
+	@cargo run --quiet --bin validate_catalog
 
 dev:
 	npx wrangler dev
@@ -22,4 +24,4 @@ resolve-origins:
 	@cargo run --quiet --bin resolve_origins -- --route-definitions-path "$(ROUTE_DEFINITIONS_PATH)"
 
 assemble-routes:
-	@cargo run --quiet --bin assemble_routes -- --repo-ref "$(REPO_REF)" --project-suffix "$(PROJECT_SUFFIX)"
+	@cargo run --quiet --bin assemble_routes -- --environment "$(ENVIRONMENT)"
