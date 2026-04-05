@@ -57,7 +57,6 @@ cloudflare-infra/
 │   └── wrangler.toml
 └── .github/workflows/
     ├── terraform.yml
-    ├── deploy-worker.yml
     └── deploy-apps-and-router.yml
 ```
 
@@ -74,7 +73,6 @@ npx wrangler dev
 ## GitHub Actions
 
 - `terraform.yml`: Terraform plan/apply for Cloudflare infra
-- `deploy-worker.yml`: validates catalog + deploys router Worker from infra catalog
 - `deploy-apps-and-router.yml`: pulls versioned app artifacts from GHCR, deploys to Pages, then deploys router
 
 ## Required repo settings

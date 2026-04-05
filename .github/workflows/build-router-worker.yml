@@ -1,0 +1,111 @@
+name: Build Router Worker Artifact
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "worker/src/**"
+      - "worker/Cargo.toml"
+      - "worker/Cargo.lock"
+      - "worker/wrangler.toml"
+      - ".github/workflows/build-router-worker.yml"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Optional channel tag override"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: build-router-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build_and_publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: worker
+
+      - name: Cache worker-build binary
+        id: cache-worker-build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/worker-build
+          key: worker-build-0.1-${{ runner.os }}-${{ hashFiles('worker/Cargo.lock') }}
+          restore-keys: |
+            worker-build-0.1-${{ runner.os }}-
+
+      - name: Install worker-build
+        if: steps.cache-worker-build.outputs.cache-hit != 'true'
+        run: cargo install --force --locked 'worker-build@^0.1'
+
+      - name: Cache worker-build downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/worker-build
+          key: worker-build-downloads-${{ runner.os }}-${{ hashFiles('worker/Cargo.lock', 'worker/wrangler.toml') }}
+          restore-keys: |
+            worker-build-downloads-${{ runner.os }}-
+
+      - name: Build worker bundle
+        run: worker-build --release
+
+      - name: Package worker bundle
+        run: |
+          set -euo pipefail
+          mkdir -p ../release
+          tar -czf ../release/worker-build.tar.gz build
+
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+
+      - name: Publish worker artifact to GHCR
+        working-directory: .
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/domain-router-worker"
+          short_sha="${GITHUB_SHA::12}"
+          sha_tag="sha-${short_sha}"
+
+          if [ -n "${{ inputs.channel }}" ]; then
+            channel_tag="${{ inputs.channel }}"
+          elif [ "${GITHUB_REF}" = "refs/heads/dev" ]; then
+            channel_tag="dev-latest"
+          else
+            channel_tag="prod-latest"
+          fi
+
+          artifact="release/worker-build.tar.gz"
+          media_type="application/vnd.myportfolio.domain-router.worker.layer.v1+tar"
+          oras push "${image}:${sha_tag}" "${artifact}:${media_type}"
+          oras push "${image}:${channel_tag}" "${artifact}:${media_type}"
+
+      - name: Upload packaged worker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: domain-router-worker-${{ github.sha }}
+          path: release/worker-build.tar.gz
+          retention-days: 3
