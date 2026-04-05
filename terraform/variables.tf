@@ -13,3 +13,9 @@ variable "router_worker_name" {
   type        = string
   default     = "domain-router"
 }
+
+variable "apex_proxy_ipv4" {
+  description = "IPv4 address used for proxied apex A record. Traffic is served by Cloudflare proxy + Worker route."
+  type        = string
+  default     = "192.0.2.1"
+}

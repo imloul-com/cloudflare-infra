@@ -81,6 +81,15 @@ jobs:
           echo "terraform init failed after 3 attempts"
           exit 1
 
+      - name: Check provider lock file
+        run: |
+          if ! git diff --exit-code .terraform.lock.hcl >/dev/null 2>&1; then
+            echo "::warning::.terraform.lock.hcl is out of date. Run 'terraform init' locally and commit the updated lock file."
+          fi
+          if [ ! -f .terraform.lock.hcl ] || ! git ls-files --error-unmatch .terraform.lock.hcl >/dev/null 2>&1; then
+            echo "::warning::.terraform.lock.hcl is not tracked in git. Run 'terraform providers lock -platform=linux_amd64 -platform=darwin_amd64 -platform=darwin_arm64' and commit the result."
+          fi
+
       - name: Terraform Fmt
         run: terraform fmt -check
 
@@ -162,6 +171,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: plan
     if: github.ref == 'refs/heads/main' && (needs.plan.outputs.has_changes == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_apply))
+    concurrency:
+      group: terraform-apply-production
+      cancel-in-progress: false
     environment:
       name: production
     defaults:
