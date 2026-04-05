@@ -45,7 +45,7 @@ jobs:
 
       - name: Cache worker-build binary
         id: cache-worker-build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/worker-build
           key: worker-build-0.1-${{ runner.os }}-${{ hashFiles('worker/Cargo.lock') }}
@@ -57,7 +57,7 @@ jobs:
         run: cargo install --force --locked 'worker-build@^0.1'
 
       - name: Cache worker-build downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/worker-build
           key: worker-build-downloads-${{ runner.os }}-${{ hashFiles('worker/Cargo.lock', 'worker/wrangler.toml') }}
