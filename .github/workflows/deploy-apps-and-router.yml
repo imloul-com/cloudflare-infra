@@ -259,9 +259,6 @@ jobs:
           route_defs=$(jq -c '.' src/route-definitions.json)
           printf "\n[vars]\nROUTE_DEFINITIONS = '%s'\n" "$route_defs" >> wrangler.toml
 
-      - name: Build router artifact once
-        run: worker-build --release
-
       - name: Deploy router worker
         uses: cloudflare/wrangler-action@v3
         with:
@@ -269,7 +266,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: worker
           wranglerVersion: "4.80.0"
-          command: deploy --no-bundle --name ${{ needs.prepare.outputs.worker_name }}${{ steps.origins.outputs.deploy_var_args }}
+          command: deploy --name ${{ needs.prepare.outputs.worker_name }}${{ steps.origins.outputs.deploy_var_args }}
 
       - name: Post-deploy smoke test
         env:
