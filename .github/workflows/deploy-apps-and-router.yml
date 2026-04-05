@@ -194,6 +194,9 @@ jobs:
         with:
           workspaces: worker
 
+      - name: Install worker-build
+        run: cargo install --force --locked 'worker-build@^0.1'
+
       - name: Assemble route definitions from catalog
         run: |
           make assemble-routes ENVIRONMENT="${{ needs.prepare.outputs.environment }}"
