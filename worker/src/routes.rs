@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::cell::RefCell;
 use std::collections::HashSet;
 use worker::Env;
 
@@ -19,7 +20,25 @@ pub struct Route {
     pub rewrite_to: String,
 }
 
+thread_local! {
+    static CACHED_ROUTES: RefCell<Option<Vec<Route>>> = const { RefCell::new(None) };
+}
+
+/// Returns the parsed route list, caching the result for the lifetime of
+/// the isolate. Env vars are constant per deployment so re-parsing on
+/// every request is wasted work.
 pub fn build_routes(env: &Env) -> Result<Vec<Route>, String> {
+    CACHED_ROUTES.with(|cell| {
+        if let Some(cached) = cell.borrow().as_ref() {
+            return Ok(cached.clone());
+        }
+        let routes = parse_routes(env)?;
+        *cell.borrow_mut() = Some(routes.clone());
+        Ok(routes)
+    })
+}
+
+fn parse_routes(env: &Env) -> Result<Vec<Route>, String> {
     let raw = env
         .var("ROUTE_DEFINITIONS")
         .map_err(|_| "missing ROUTE_DEFINITIONS binding".to_string())?

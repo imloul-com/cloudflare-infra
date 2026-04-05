@@ -38,6 +38,12 @@ jobs:
 
       - run: make test
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --quiet
+
+      - name: Audit dependencies
+        run: cargo audit
+
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -82,9 +88,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: npm-wrangler-4.14.0-${{ runner.os }}-${{ hashFiles('worker/wrangler.toml') }}
+          key: npm-wrangler-4.80.0-${{ runner.os }}-${{ hashFiles('worker/wrangler.toml') }}
           restore-keys: |
-            npm-wrangler-4.14.0-${{ runner.os }}-
+            npm-wrangler-4.80.0-${{ runner.os }}-
 
       - name: Assemble route definitions from app repos
         env:
@@ -128,5 +134,25 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: worker
-          wranglerVersion: "4.14.0"
+          wranglerVersion: "4.80.0"
           command: deploy${{ steps.origins.outputs.deploy_var_args }}
+
+      - name: Post-deploy smoke test
+        run: |
+          sleep 10
+          failed=0
+          for url in \
+            "https://imloul.com/_health" \
+            "https://imloul.com/" \
+            "https://imloul.com/tools/ast-viz/"; do
+            status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "$url" || echo "000")
+            echo "$url -> HTTP $status"
+            if [ "$status" -lt 200 ] || [ "$status" -ge 400 ]; then
+              echo "::error::Smoke test failed for $url (HTTP $status)"
+              failed=1
+            fi
+          done
+          if [ "$failed" -eq 1 ]; then
+            exit 1
+          fi
+          echo "All smoke tests passed"
