@@ -4,113 +4,112 @@ use std::error::Error;
 use std::fs;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 struct AppCatalog {
     apps: Vec<AppDefinition>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 struct AppDefinition {
-    app_id: String,
-    registry: RegistryConfig,
-    deploy: DeployConfig,
-    route: RouteConfig,
-    pages: PagesConfig,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RouteConfig {
-    route_key: String,
-    prefix: String,
-    rewrite_to: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PagesConfig {
-    project_name: String,
-    dev_project_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RegistryConfig {
+    id: String,
     image: String,
+    route: RouteConfig,
+    env: EnvConfig,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct DeployConfig {
-    prod_version: String,
-    dev_version: String,
+#[serde(untagged)]
+enum RouteConfig {
+    Prefix(String),
+    Expanded(ExpandedRouteConfig),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExpandedRouteConfig {
+    #[serde(rename = "match")]
+    path_match: String,
+    #[serde(default = "default_route_rewrite")]
+    rewrite: String,
+}
+
+#[derive(Debug)]
+struct NormalizedRouteConfig {
+    path_match: String,
+    rewrite: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnvConfig {
+    prod: EnvEntry,
+    dev: EnvEntry,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnvEntry {
+    version: String,
+    pages: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let path = "src/app-sources.json";
+    let path = "src/apps.yaml";
     let raw = fs::read_to_string(path)?;
-    let catalog: AppCatalog = serde_json::from_str(&raw)?;
+    let catalog: AppCatalog = serde_yaml::from_str(&raw)?;
 
     if catalog.apps.is_empty() {
         return Err("app catalog must include at least one app".into());
     }
 
     let mut app_ids = HashSet::new();
-    let mut route_keys = HashSet::new();
     let mut prefixes = HashSet::new();
-    let mut project_names = HashSet::new();
+    let mut pages_names = HashSet::new();
 
     for app in &catalog.apps {
-        ensure_non_empty(&app.app_id, "appId")?;
-        ensure_non_empty(&app.registry.image, "registry.image")?;
-        ensure_non_empty(&app.deploy.prod_version, "deploy.prodVersion")?;
-        ensure_non_empty(&app.deploy.dev_version, "deploy.devVersion")?;
-        ensure_non_empty(&app.route.route_key, "route.routeKey")?;
-        ensure_non_empty(&app.route.prefix, "route.prefix")?;
-        ensure_non_empty(&app.route.rewrite_to, "route.rewriteTo")?;
-        ensure_non_empty(&app.pages.project_name, "pages.projectName")?;
-        ensure_non_empty(&app.pages.dev_project_name, "pages.devProjectName")?;
+        let route = app.route.normalized();
+        ensure_non_empty(&app.id, "id")?;
+        ensure_non_empty(&app.image, "image")?;
+        ensure_non_empty(&route.path_match, "route.match")?;
+        ensure_non_empty(&route.rewrite, "route.rewrite")?;
+        ensure_non_empty(&app.env.prod.version, "env.prod.version")?;
+        ensure_non_empty(&app.env.prod.pages, "env.prod.pages")?;
+        ensure_non_empty(&app.env.dev.version, "env.dev.version")?;
+        ensure_non_empty(&app.env.dev.pages, "env.dev.pages")?;
 
-        if !app_ids.insert(app.app_id.clone()) {
-            return Err(format!("duplicate appId '{}'", app.app_id).into());
+        if !app_ids.insert(app.id.clone()) {
+            return Err(format!("duplicate id '{}'", app.id).into());
         }
-        if !route_keys.insert(app.route.route_key.clone()) {
-            return Err(format!("duplicate routeKey '{}'", app.route.route_key).into());
+        if !prefixes.insert(route.path_match.clone()) {
+            return Err(format!("duplicate route.match '{}'", route.path_match).into());
         }
-        if !prefixes.insert(app.route.prefix.clone()) {
-            return Err(format!("duplicate prefix '{}'", app.route.prefix).into());
+        if !pages_names.insert(app.env.prod.pages.clone()) {
+            return Err(format!("duplicate env.prod.pages '{}'", app.env.prod.pages).into());
         }
-
-        if !project_names.insert(app.pages.project_name.clone()) {
-            return Err(format!("duplicate pages.projectName '{}'", app.pages.project_name).into());
-        }
-        if !project_names.insert(app.pages.dev_project_name.clone()) {
-            return Err(
-                format!(
-                    "duplicate pages.devProjectName '{}'",
-                    app.pages.dev_project_name
-                )
-                .into(),
-            );
+        if !pages_names.insert(app.env.dev.pages.clone()) {
+            return Err(format!("duplicate env.dev.pages '{}'", app.env.dev.pages).into());
         }
 
-        if !app.route.prefix.starts_with('/') {
-            return Err(format!("prefix must start with '/': {}", app.route.prefix).into());
+        if !route.path_match.starts_with('/') {
+            return Err(format!(
+                "route.match must start with '/': {}",
+                route.path_match
+            )
+            .into());
         }
-        if !app.registry.image.starts_with("ghcr.io/") {
-            return Err(format!("registry.image must start with ghcr.io/: {}", app.registry.image).into());
+        if !app.image.starts_with("ghcr.io/") {
+            return Err(format!("image must start with ghcr.io/: {}", app.image).into());
         }
-        if !app.route.rewrite_to.starts_with('/') {
-            return Err(format!("rewriteTo must start with '/': {}", app.route.rewrite_to).into());
+        if !route.rewrite.starts_with('/') {
+            return Err(format!("route.rewrite must start with '/': {}", route.rewrite).into());
         }
         if !app
-            .route
-            .route_key
+            .id
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
         {
-            return Err(format!("invalid routeKey '{}'", app.route.route_key).into());
+            return Err(format!("invalid id '{}'", app.id).into());
         }
     }
 
@@ -123,4 +122,23 @@ fn ensure_non_empty(value: &str, field_name: &str) -> Result<(), Box<dyn Error>>
         return Err(format!("{field_name} must be non-empty").into());
     }
     Ok(())
+}
+
+fn default_route_rewrite() -> String {
+    "/".to_string()
+}
+
+impl RouteConfig {
+    fn normalized(&self) -> NormalizedRouteConfig {
+        match self {
+            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
+                path_match: prefix.clone(),
+                rewrite: default_route_rewrite(),
+            },
+            RouteConfig::Expanded(route) => NormalizedRouteConfig {
+                path_match: route.path_match.clone(),
+                rewrite: route.rewrite.clone(),
+            },
+        }
+    }
 }

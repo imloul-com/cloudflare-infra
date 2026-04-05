@@ -7,31 +7,40 @@ use std::fs;
 use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct AppCatalog {
     apps: Vec<AppSource>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct AppSource {
     route: RouteConfig,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RouteConfig {
-    prefix: String,
+#[serde(untagged)]
+enum RouteConfig {
+    Prefix(String),
+    Expanded {
+        #[serde(rename = "match")]
+        path_match: String,
+        #[serde(default = "default_route_rewrite")]
+        rewrite: String,
+    },
+}
+
+#[derive(Debug)]
+struct NormalizedRouteConfig {
+    path_match: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let zone = required_env("CLOUDFLARE_ZONE_NAME")?;
     let app_sources_path = parse_app_sources_path(env::args().collect());
-    let catalog: AppCatalog = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let catalog: AppCatalog = serde_yaml::from_str(&fs::read_to_string(&app_sources_path)?)?;
     let app_sources = catalog.apps;
 
     if app_sources.is_empty() {
-        return Err("app-sources.json must not be empty".into());
+        return Err("apps.yaml must not be empty".into());
     }
 
     let base_origin = normalize_zone_to_origin(&zone)?;
@@ -66,7 +75,8 @@ fn build_endpoints(base_origin: &str, app_sources: &[AppSource]) -> Vec<String> 
     endpoints.insert(format!("{base_origin}/_health"));
 
     for source in app_sources {
-        let prefix = normalize_prefix(&source.route.prefix);
+        let route = source.route.normalized();
+        let prefix = normalize_prefix(&route.path_match);
         endpoints.insert(format!("{base_origin}{prefix}"));
     }
 
@@ -107,7 +117,7 @@ fn normalize_prefix(prefix: &str) -> String {
 
 fn parse_app_sources_path(args: Vec<String>) -> String {
     let mut i = 1usize;
-    let mut path = String::from("worker/src/app-sources.json");
+    let mut path = String::from("worker/src/apps.yaml");
 
     while i < args.len() {
         if args[i] == "--app-sources-path" && i + 1 < args.len() {
@@ -123,4 +133,21 @@ fn parse_app_sources_path(args: Vec<String>) -> String {
 
 fn required_env(name: &str) -> Result<String, Box<dyn Error>> {
     env::var(name).map_err(|_| format!("missing required environment variable: {name}").into())
+}
+
+fn default_route_rewrite() -> String {
+    "/".to_string()
+}
+
+impl RouteConfig {
+    fn normalized(&self) -> NormalizedRouteConfig {
+        match self {
+            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
+                path_match: prefix.clone(),
+            },
+            RouteConfig::Expanded { path_match, .. } => NormalizedRouteConfig {
+                path_match: path_match.clone(),
+            },
+        }
+    }
 }

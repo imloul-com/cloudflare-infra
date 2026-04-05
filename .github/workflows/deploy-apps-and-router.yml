@@ -1,6 +1,10 @@
 name: Deploy Apps and Router
 
 on:
+  workflow_run:
+    workflows: ["Build Router Worker Artifact"]
+    types: [completed]
+    branches: [main, dev]
   repository_dispatch:
     types: [app-published]
   workflow_dispatch:
@@ -19,21 +23,18 @@ on:
   push:
     branches: [main, dev]
     paths:
-      - "worker/src/app-sources.json"
-      - "worker/src/**"
-      - "worker/Cargo.toml"
-      - "worker/Cargo.lock"
-      - "worker/wrangler.toml"
+      - "worker/src/apps.yaml"
       - "worker/wrangler.deploy.toml"
       - ".github/workflows/deploy-apps-and-router.yml"
 
 concurrency:
-  group: deploy-apps-and-router-${{ github.ref }}
+  group: deploy-apps-and-router-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: true
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     outputs:
       environment: ${{ steps.env.outputs.name }}
       worker_name: ${{ steps.env.outputs.worker_name }}
@@ -47,6 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
@@ -68,7 +70,12 @@ jobs:
           deploy_apps="false"
           deploy_router="false"
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            branch="${{ github.event.workflow_run.head_branch }}"
+            env_name="$( [ "$branch" = "dev" ] && echo "dev" || echo "prod" )"
+            version_override=""
+            deploy_router="true"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             env_name="${{ inputs.environment }}"
             version_override="${{ inputs.version_override }}"
             deploy_apps="true"
@@ -113,11 +120,11 @@ jobs:
               changed_files="$(git show --pretty='' --name-only "${{ github.sha }}" || true)"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(worker/src/app-sources\.json|\.github/workflows/deploy-apps-and-router\.yml)$'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^worker/src/apps\.yaml$'; then
               deploy_apps="true"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(worker/src/|worker/Cargo\.(toml|lock)$|worker/wrangler\.toml$|worker/wrangler\.deploy\.toml$|\.github/workflows/deploy-apps-and-router\.yml$)'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^(worker/src/apps\.yaml|worker/wrangler\.deploy\.toml|\.github/workflows/deploy-apps-and-router\.yml)$'; then
               deploy_router="true"
             fi
           fi
@@ -142,18 +149,18 @@ jobs:
               echo "Terraform variables drift: missing project name '${name}'" >&2
               exit 1
             fi
-          done < <(jq -r '.apps[].pages.projectName' worker/src/app-sources.json)
+          done < <(yq -o json '.' worker/src/apps.yaml | jq -r '.apps[].env.prod.pages')
 
           if [ "${{ steps.env.outputs.deploy_apps }}" != "true" ]; then
             matrix='[]'
           elif [ -n "${{ steps.env.outputs.target_app_id }}" ]; then
-            matrix=$(jq -c --arg target "${{ steps.env.outputs.target_app_id }}" '.apps | map(select(.appId == $target) | {appId, projectName: .pages.projectName, devProjectName: .pages.devProjectName, image: .registry.image, prodVersion: .deploy.prodVersion, devVersion: .deploy.devVersion})' worker/src/app-sources.json)
+            matrix=$(yq -o json '.' worker/src/apps.yaml | jq -c --arg target "${{ steps.env.outputs.target_app_id }}" '.apps | map(select(.id == $target) | {appId: .id, projectName: .env.prod.pages, devProjectName: .env.dev.pages, image, prodVersion: .env.prod.version, devVersion: .env.dev.version})')
             if [ "$matrix" = "[]" ]; then
-              echo "app '${{ steps.env.outputs.target_app_id }}' not found in worker/src/app-sources.json" >&2
+              echo "app '${{ steps.env.outputs.target_app_id }}' not found in worker/src/apps.yaml" >&2
               exit 1
             fi
           else
-            matrix=$(jq -c '.apps | map({appId, projectName: .pages.projectName, devProjectName: .pages.devProjectName, image: .registry.image, prodVersion: .deploy.prodVersion, devVersion: .deploy.devVersion})' worker/src/app-sources.json)
+            matrix=$(yq -o json '.' worker/src/apps.yaml | jq -c '.apps | map({appId: .id, projectName: .env.prod.pages, devProjectName: .env.dev.pages, image, prodVersion: .env.prod.version, devVersion: .env.dev.version})')
             if [ -z "$matrix" ] || [ "$matrix" = "[]" ]; then
               echo "app catalog is empty" >&2
               exit 1
@@ -327,4 +334,4 @@ jobs:
           CLOUDFLARE_ZONE_NAME: ${{ needs.prepare.outputs.zone_name }}
         run: |
           sleep 3
-          cargo run --quiet --bin uptime_monitor -- --app-sources-path src/app-sources.json
+          cargo run --quiet --bin uptime_monitor -- --app-sources-path src/apps.yaml
