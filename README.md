@@ -21,6 +21,23 @@ Two deployment pipelines, decoupled by design:
 
 Apps (`ast-viz`, `portfolio`) deploy their own assets to Cloudflare Pages via their own repos. They have no knowledge of routing — all routing decisions live in `app-sources.json` in this repo. The CI fetches each app's `projectName` from its `wrangler.toml` at deploy time. App deploys auto-trigger a router redeployment via `repository_dispatch`.
 
+## Sitemap strategy
+
+The router Worker serves a domain-level sitemap index so search engines can discover URLs from multiple app origins under one domain:
+
+- `https://imloul.com/sitemap.xml` (sitemap index)
+- `https://imloul.com/sitemaps/{routeKey}.xml` (one child sitemap per entry in `worker/src/app-sources.json`)
+- Current examples:
+  - `https://imloul.com/sitemaps/portfolio.xml`
+  - `https://imloul.com/sitemaps/ast_viz.xml`
+
+For non-root prefixes (for example `ast_viz` at `/tools/ast-viz`), sitemap `<loc>` URLs are rewritten to the domain path (`https://imloul.com/tools/ast-viz/...`).
+
+Search Console recommendation:
+
+- Submit only `https://imloul.com/sitemap.xml`
+- Do not submit child sitemaps separately unless debugging
+
 ## Directory layout
 
 ```

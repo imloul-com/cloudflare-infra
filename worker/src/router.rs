@@ -97,10 +97,7 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
     let response = Fetch::Request(upstream_req).send().await?;
 
     if m.route.rewrite_to == "/" && m.route.prefix != "/" {
-        let content_type = response
-            .headers()
-            .get("content-type")?
-            .unwrap_or_default();
+        let content_type = response.headers().get("content-type")?.unwrap_or_default();
         if content_type.contains("text/html") {
             return inject_base_tag(response, &m.route.prefix).await;
         }
@@ -152,11 +149,13 @@ mod tests {
     fn make_routes() -> Vec<Route> {
         vec![
             Route {
+                route_key: "ast_viz".to_string(),
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://worker-ast-viz.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
             },
             Route {
+                route_key: "portfolio".to_string(),
                 prefix: "/".to_string(),
                 origin: "https://portfolio.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
@@ -227,23 +226,29 @@ mod tests {
     fn test_more_specific_prefix_wins() {
         let routes = vec![
             Route {
+                route_key: "ast_viz".to_string(),
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://ast.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
             },
             Route {
+                route_key: "tools".to_string(),
                 prefix: "/tools".to_string(),
                 origin: "https://tools.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
             },
             Route {
+                route_key: "root".to_string(),
                 prefix: "/".to_string(),
                 origin: "https://root.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
             },
         ];
         assert_eq!(
-            match_route("/tools/ast-viz/page", &routes).unwrap().route.origin,
+            match_route("/tools/ast-viz/page", &routes)
+                .unwrap()
+                .route
+                .origin,
             "https://ast.pages.dev"
         );
         assert_eq!(
@@ -267,7 +272,10 @@ mod tests {
 
     #[test]
     fn test_rewrite_prefix_trailing_slash_to_root() {
-        assert_eq!(rewrite_prefix("/tools/ast-viz/", "/tools/ast-viz", "/"), "/");
+        assert_eq!(
+            rewrite_prefix("/tools/ast-viz/", "/tools/ast-viz", "/"),
+            "/"
+        );
     }
 
     #[test]

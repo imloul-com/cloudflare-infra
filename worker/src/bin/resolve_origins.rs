@@ -39,6 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let client = Client::builder().build()?;
     let mut deploy_var_args = String::new();
     let mut seen_keys = HashSet::new();
+    let mut seen_binding_keys = HashSet::new();
 
     for route in routes {
         if route.route_key.trim().is_empty() {
@@ -47,9 +48,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !route
             .route_key
             .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
         {
-            return Err("each route routeKey must match [a-z0-9_]+".into());
+            return Err("each route routeKey must match [a-z0-9_-]+".into());
         }
         if !seen_keys.insert(route.route_key.clone()) {
             return Err(format!("duplicate routeKey: {}", route.route_key).into());
@@ -65,6 +66,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let origin_url = resolve_origin(&client, &api_token, &account_id, &route.project_name)?;
+        let binding_key = binding_route_key(&route.route_key);
+        if !seen_binding_keys.insert(binding_key.clone()) {
+            return Err(format!(
+                "routeKey '{}' conflicts with another routeKey when normalized for origin binding ('{}')",
+                route.route_key, binding_key
+            )
+            .into());
+        }
         deploy_var_args.push_str(&format!(
             " --var {}:{}",
             origin_var_name(&route.route_key),
@@ -77,7 +86,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn origin_var_name(route_key: &str) -> String {
-    format!("{}_ORIGIN", route_key.to_ascii_uppercase())
+    format!("{}_ORIGIN", binding_route_key(route_key).to_ascii_uppercase())
+}
+
+fn binding_route_key(route_key: &str) -> String {
+    route_key.replace('-', "_")
 }
 
 fn parse_route_definitions_path(args: Vec<String>) -> String {
@@ -126,7 +139,12 @@ fn resolve_origin(
         .result
         .and_then(|r| r.subdomain)
         .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| format!("failed to resolve subdomain for Pages project: {}", project_name))?;
+        .ok_or_else(|| {
+            format!(
+                "failed to resolve subdomain for Pages project: {}",
+                project_name
+            )
+        })?;
 
     Ok(format!("https://{}", subdomain))
 }

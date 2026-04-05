@@ -7,7 +7,7 @@
   },
   {
     "repo": "AnasImloul/ast-viz",
-    "routeKey": "ast_viz",
+    "routeKey": "ast-viz",
     "prefix": "/tools/ast-viz",
     "rewriteTo": "/"
   }

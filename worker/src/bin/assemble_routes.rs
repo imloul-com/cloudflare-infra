@@ -28,8 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .or_else(|_| env::var("GITHUB_TOKEN"))
         .map_err(|_| "missing GH_TOKEN or GITHUB_TOKEN environment variable")?;
 
-    let sources: Vec<AppSource> =
-        serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let sources: Vec<AppSource> = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
 
     if sources.is_empty() {
         return Err("app-sources.json must not be empty".into());
@@ -57,11 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn fetch_project_name(
-    client: &Client,
-    token: &str,
-    repo: &str,
-) -> Result<String, Box<dyn Error>> {
+fn fetch_project_name(client: &Client, token: &str, repo: &str) -> Result<String, Box<dyn Error>> {
     let url = format!(
         "https://api.github.com/repos/{}/contents/wrangler.toml?ref=main",
         repo
