@@ -1,0 +1,14 @@
+apps:
+  - id: aimloul-blog
+    image: ghcr.io/imloul-com/aimloul-blog-static
+    route: { key: portfolio, prefix: /, rewrite: / }
+    env:
+      prod: { version: prod-latest, pages: portfolio }
+      dev:  { version: dev-latest,  pages: portfolio-dev }
+
+  - id: ast-viz
+    image: ghcr.io/imloul-com/ast-viz-static
+    route: { key: ast-viz, prefix: /tools/ast-viz, rewrite: / }
+    env:
+      prod: { version: prod-latest, pages: ast-viz }
+      dev:  { version: dev-latest,  pages: ast-viz-dev }

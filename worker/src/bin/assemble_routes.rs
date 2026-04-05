@@ -11,7 +11,7 @@ struct AppCatalog {
 #[derive(Debug, Deserialize)]
 struct AppDefinition {
     route: RouteConfig,
-    pages: PagesConfig,
+    env: EnvConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -22,9 +22,14 @@ struct RouteConfig {
 }
 
 #[derive(Debug, Deserialize)]
-struct PagesConfig {
-    prod: String,
-    dev: String,
+struct EnvConfig {
+    prod: EnvEntry,
+    dev: EnvEntry,
+}
+
+#[derive(Debug, Deserialize)]
+struct EnvEntry {
+    pages: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -38,17 +43,17 @@ struct RouteDefinition {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let (app_sources_path, output_path, environment) = parse_args(env::args().collect());
-    let catalog: AppCatalog = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let catalog: AppCatalog = serde_yaml::from_str(&fs::read_to_string(&app_sources_path)?)?;
     let sources = catalog.apps;
 
     if sources.is_empty() {
-        return Err("app-sources.json must not be empty".into());
+        return Err("apps.yaml must not be empty".into());
     }
 
     let mut route_defs = Vec::with_capacity(sources.len());
 
     for source in sources {
-        let project_name = project_name_for_environment(&source.pages, &environment);
+        let project_name = project_name_for_environment(&source.env, &environment);
 
         route_defs.push(RouteDefinition {
             route_key: source.route.key,
@@ -65,16 +70,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn project_name_for_environment(pages: &PagesConfig, environment: &str) -> String {
+fn project_name_for_environment(env: &EnvConfig, environment: &str) -> String {
     if environment == "dev" {
-        pages.dev.clone()
+        env.dev.pages.clone()
     } else {
-        pages.prod.clone()
+        env.prod.pages.clone()
     }
 }
 
 fn parse_args(args: Vec<String>) -> (String, String, String) {
-    let mut app_sources = String::from("src/app-sources.json");
+    let mut app_sources = String::from("src/apps.yaml");
     let mut output = String::from("src/route-definitions.json");
     let mut environment = String::from("prod");
     let mut i = 1;

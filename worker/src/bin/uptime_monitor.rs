@@ -7,19 +7,16 @@ use std::fs;
 use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct AppCatalog {
     apps: Vec<AppSource>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct AppSource {
     route: RouteConfig,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct RouteConfig {
     prefix: String,
 }
@@ -27,11 +24,11 @@ struct RouteConfig {
 fn main() -> Result<(), Box<dyn Error>> {
     let zone = required_env("CLOUDFLARE_ZONE_NAME")?;
     let app_sources_path = parse_app_sources_path(env::args().collect());
-    let catalog: AppCatalog = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let catalog: AppCatalog = serde_yaml::from_str(&fs::read_to_string(&app_sources_path)?)?;
     let app_sources = catalog.apps;
 
     if app_sources.is_empty() {
-        return Err("app-sources.json must not be empty".into());
+        return Err("apps.yaml must not be empty".into());
     }
 
     let base_origin = normalize_zone_to_origin(&zone)?;
@@ -107,7 +104,7 @@ fn normalize_prefix(prefix: &str) -> String {
 
 fn parse_app_sources_path(args: Vec<String>) -> String {
     let mut i = 1usize;
-    let mut path = String::from("worker/src/app-sources.json");
+    let mut path = String::from("worker/src/apps.yaml");
 
     while i < args.len() {
         if args[i] == "--app-sources-path" && i + 1 < args.len() {
