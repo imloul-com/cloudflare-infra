@@ -104,7 +104,7 @@ jobs:
           oras push "${image}:${channel_tag}" "${artifact}:${media_type}"
 
       - name: Upload packaged worker artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: domain-router-worker-${{ github.sha }}
           path: release/worker-build.tar.gz
