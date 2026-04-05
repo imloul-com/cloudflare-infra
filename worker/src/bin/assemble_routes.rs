@@ -10,13 +10,13 @@ struct AppCatalog {
 
 #[derive(Debug, Deserialize)]
 struct AppDefinition {
+    id: String,
     route: RouteConfig,
     env: EnvConfig,
 }
 
 #[derive(Debug, Deserialize)]
 struct RouteConfig {
-    key: String,
     prefix: String,
     rewrite: String,
 }
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let project_name = project_name_for_environment(&source.env, &environment);
 
         route_defs.push(RouteDefinition {
-            route_key: source.route.key,
+            route_key: source.id,
             prefix: source.route.prefix,
             rewrite_to: source.route.rewrite,
             project_name,

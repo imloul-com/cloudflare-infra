@@ -21,7 +21,6 @@ struct AppDefinition {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RouteConfig {
-    key: String,
     prefix: String,
     rewrite: String,
 }
@@ -50,14 +49,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut app_ids = HashSet::new();
-    let mut route_keys = HashSet::new();
     let mut prefixes = HashSet::new();
     let mut pages_names = HashSet::new();
 
     for app in &catalog.apps {
         ensure_non_empty(&app.id, "id")?;
         ensure_non_empty(&app.image, "image")?;
-        ensure_non_empty(&app.route.key, "route.key")?;
         ensure_non_empty(&app.route.prefix, "route.prefix")?;
         ensure_non_empty(&app.route.rewrite, "route.rewrite")?;
         ensure_non_empty(&app.env.prod.version, "env.prod.version")?;
@@ -67,9 +64,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if !app_ids.insert(app.id.clone()) {
             return Err(format!("duplicate id '{}'", app.id).into());
-        }
-        if !route_keys.insert(app.route.key.clone()) {
-            return Err(format!("duplicate route.key '{}'", app.route.key).into());
         }
         if !prefixes.insert(app.route.prefix.clone()) {
             return Err(format!("duplicate prefix '{}'", app.route.prefix).into());
@@ -91,12 +85,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Err(format!("route.rewrite must start with '/': {}", app.route.rewrite).into());
         }
         if !app
-            .route
-            .key
+            .id
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
         {
-            return Err(format!("invalid route.key '{}'", app.route.key).into());
+            return Err(format!("invalid id '{}'", app.id).into());
         }
     }
 
