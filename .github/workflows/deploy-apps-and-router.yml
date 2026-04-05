@@ -1,0 +1,233 @@
+name: Deploy Apps and Router
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: false
+        default: "prod"
+        type: choice
+        options: [prod, dev]
+      version_override:
+        description: "Override version/tag for all apps (optional)"
+        required: false
+        default: ""
+        type: string
+  push:
+    branches: [main, dev]
+    paths:
+      - "worker/src/app-sources.json"
+      - ".github/workflows/deploy-apps-and-router.yml"
+
+concurrency:
+  group: deploy-apps-and-router-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.name }}
+      worker_name: ${{ steps.env.outputs.worker_name }}
+      zone_name: ${{ steps.env.outputs.zone_name }}
+      version_override: ${{ steps.env.outputs.version_override }}
+      matrix: ${{ steps.catalog.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+
+      - name: Validate app catalog
+        working-directory: worker
+        run: make validate-catalog
+
+      - name: Determine deployment environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            env_name="${{ inputs.environment }}"
+            version_override="${{ inputs.version_override }}"
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            env_name="dev"
+            version_override=""
+          else
+            env_name="prod"
+            version_override=""
+          fi
+
+          if [ "$env_name" = "dev" ]; then
+            echo "name=dev" >> "$GITHUB_OUTPUT"
+            echo "worker_name=domain-router-dev" >> "$GITHUB_OUTPUT"
+            echo "zone_name=dev.imloul.com" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=prod" >> "$GITHUB_OUTPUT"
+            echo "worker_name=domain-router" >> "$GITHUB_OUTPUT"
+            echo "zone_name=${{ vars.CLOUDFLARE_ZONE_NAME }}" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version_override=$version_override" >> "$GITHUB_OUTPUT"
+
+      - name: Build app deployment matrix from catalog
+        id: catalog
+        run: |
+          # Guardrail: ensure Terraform defaults still include known Pages base names.
+          while IFS= read -r name; do
+            if ! grep -q "\"${name}\"" terraform/variables.tf; then
+              echo "Terraform variables drift: missing project name '${name}'" >&2
+              exit 1
+            fi
+          done < <(jq -r '.apps[].pages.projectName' worker/src/app-sources.json)
+
+          matrix=$(jq -c '.apps | map({appId, projectName: .pages.projectName, devProjectName: .pages.devProjectName, image: .registry.image, prodVersion: .deploy.prodVersion, devVersion: .deploy.devVersion})' worker/src/app-sources.json)
+          if [ -z "$matrix" ] || [ "$matrix" = "[]" ]; then
+            echo "app catalog is empty" >&2
+            exit 1
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  deploy_apps:
+    name: Deploy app ${{ matrix.appId }}
+    runs-on: ubuntu-latest
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    env:
+      TARGET_ENV: ${{ needs.prepare.outputs.environment }}
+      VERSION_OVERRIDE: ${{ needs.prepare.outputs.version_override }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Pages project
+        id: pages
+        run: |
+          if [ "${TARGET_ENV}" = "dev" ]; then
+            echo "name=${{ matrix.devProjectName }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ matrix.projectName }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine artifact version
+        id: version
+        run: |
+          if [ -n "${VERSION_OVERRIDE}" ]; then
+            version="${VERSION_OVERRIDE}"
+          elif [ "${TARGET_ENV}" = "dev" ]; then
+            version="${{ matrix.devVersion }}"
+          else
+            version="${{ matrix.prodVersion }}"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+        run: |
+          set -euo pipefail
+          username="${GHCR_USERNAME:-${{ github.repository_owner }}}"
+          echo "${{ secrets.CROSS_REPO_TOKEN }}" | oras login ghcr.io -u "${username}" --password-stdin
+
+      - name: Pull app artifact from GHCR
+        run: |
+          set -euo pipefail
+          mkdir -p .artifact
+          cd .artifact
+          artifact_ref="${{ matrix.image }}:${{ steps.version.outputs.value }}"
+          echo "Pulling ${artifact_ref}"
+          oras pull "${artifact_ref}"
+          artifact_file="$(ls -1 *.tar.gz | head -n 1)"
+          if [ -z "${artifact_file}" ]; then
+            echo "No .tar.gz artifact found in ${artifact_ref}" >&2
+            exit 1
+          fi
+          mkdir -p app_build
+          tar -xzf "${artifact_file}" -C app_build
+
+      - name: Check if Pages project exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PROJECT_NAME: ${{ steps.pages.outputs.name }}
+        run: |
+          status_code=$(curl -sS -o /tmp/cf-pages-project.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CLOUDFLARE_PROJECT_NAME}")
+          if [ "$status_code" != "200" ]; then
+            echo "Missing Terraform-managed Pages project: ${CLOUDFLARE_PROJECT_NAME}" >&2
+            cat /tmp/cf-pages-project.json
+            exit 1
+          fi
+
+      - name: Deploy app to Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.80.0"
+          command: pages deploy .artifact/app_build --project-name ${{ steps.pages.outputs.name }} --branch main --commit-dirty=true
+
+  deploy_router:
+    name: Deploy router worker
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy_apps]
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: worker
+
+      - name: Assemble route definitions from catalog
+        run: |
+          make assemble-routes ENVIRONMENT="${{ needs.prepare.outputs.environment }}"
+          jq . src/route-definitions.json
+
+      - name: Resolve Pages origins
+        id: origins
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          deploy_var_args="$(make resolve-origins ROUTE_DEFINITIONS_PATH=src/route-definitions.json)"
+          {
+            echo "deploy_var_args<<EOF"
+            echo "$deploy_var_args"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Inject route definitions into wrangler.toml
+        run: |
+          route_defs=$(jq -c '.' src/route-definitions.json)
+          printf "\n[vars]\nROUTE_DEFINITIONS = '%s'\n" "$route_defs" >> wrangler.toml
+
+      - name: Deploy router worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          wranglerVersion: "4.80.0"
+          command: deploy --name ${{ needs.prepare.outputs.worker_name }}${{ steps.origins.outputs.deploy_var_args }}
+
+      - name: Post-deploy smoke test
+        env:
+          CLOUDFLARE_ZONE_NAME: ${{ needs.prepare.outputs.zone_name }}
+        run: |
+          sleep 10
+          cargo run --quiet --bin uptime_monitor -- --app-sources-path src/app-sources.json

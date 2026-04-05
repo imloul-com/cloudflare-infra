@@ -1,14 +1,42 @@
-[
-  {
-    "repo": "AnasImloul/aimloul-blog",
-    "routeKey": "portfolio",
-    "prefix": "/",
-    "rewriteTo": "/"
-  },
-  {
-    "repo": "AnasImloul/ast-viz",
-    "routeKey": "ast-viz",
-    "prefix": "/tools/ast-viz",
-    "rewriteTo": "/"
-  }
-]
+{
+  "apps": [
+    {
+      "appId": "aimloul-blog",
+      "registry": {
+        "image": "ghcr.io/imloul-com/aimloul-blog-static"
+      },
+      "deploy": {
+        "prodVersion": "prod-latest",
+        "devVersion": "dev-latest"
+      },
+      "route": {
+        "routeKey": "portfolio",
+        "prefix": "/",
+        "rewriteTo": "/"
+      },
+      "pages": {
+        "projectName": "portfolio",
+        "devProjectName": "portfolio-dev"
+      }
+    },
+    {
+      "appId": "ast-viz",
+      "registry": {
+        "image": "ghcr.io/imloul-com/ast-viz-static"
+      },
+      "deploy": {
+        "prodVersion": "prod-latest",
+        "devVersion": "dev-latest"
+      },
+      "route": {
+        "routeKey": "ast-viz",
+        "prefix": "/tools/ast-viz",
+        "rewriteTo": "/"
+      },
+      "pages": {
+        "projectName": "ast-viz",
+        "devProjectName": "ast-viz-dev"
+      }
+    }
+  ]
+}

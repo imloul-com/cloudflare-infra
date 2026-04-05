@@ -8,14 +8,27 @@ use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct AppCatalog {
+    apps: Vec<AppSource>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AppSource {
+    route: RouteConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RouteConfig {
     prefix: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let zone = required_env("CLOUDFLARE_ZONE_NAME")?;
     let app_sources_path = parse_app_sources_path(env::args().collect());
-    let app_sources: Vec<AppSource> = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let catalog: AppCatalog = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let app_sources = catalog.apps;
 
     if app_sources.is_empty() {
         return Err("app-sources.json must not be empty".into());
@@ -53,7 +66,7 @@ fn build_endpoints(base_origin: &str, app_sources: &[AppSource]) -> Vec<String> 
     endpoints.insert(format!("{base_origin}/_health"));
 
     for source in app_sources {
-        let prefix = normalize_prefix(&source.prefix);
+        let prefix = normalize_prefix(&source.route.prefix);
         endpoints.insert(format!("{base_origin}{prefix}"));
     }
 

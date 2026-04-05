@@ -1,4 +1,3 @@
-use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
@@ -6,11 +5,30 @@ use std::fs;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AppSource {
-    repo: String,
+struct AppCatalog {
+    apps: Vec<AppDefinition>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppDefinition {
+    route: RouteConfig,
+    pages: PagesConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RouteConfig {
     route_key: String,
     prefix: String,
     rewrite_to: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PagesConfig {
+    project_name: String,
+    dev_project_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -23,32 +41,23 @@ struct RouteDefinition {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let (app_sources_path, output_path, repo_ref, project_suffix) = parse_args(env::args().collect());
-    let github_token = env::var("GH_TOKEN")
-        .or_else(|_| env::var("GITHUB_TOKEN"))
-        .map_err(|_| "missing GH_TOKEN or GITHUB_TOKEN environment variable")?;
-
-    let sources: Vec<AppSource> = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let (app_sources_path, output_path, environment) = parse_args(env::args().collect());
+    let catalog: AppCatalog = serde_json::from_str(&fs::read_to_string(&app_sources_path)?)?;
+    let sources = catalog.apps;
 
     if sources.is_empty() {
         return Err("app-sources.json must not be empty".into());
     }
 
-    let client = Client::builder().build()?;
     let mut route_defs = Vec::with_capacity(sources.len());
 
     for source in sources {
-        let project_name = format!(
-            "{}{}",
-            fetch_project_name(&client, &github_token, &source.repo, &repo_ref)?,
-            project_suffix
-        );
-        eprintln!("{} -> projectName={}", source.repo, project_name);
+        let project_name = project_name_for_environment(&source.pages, &environment);
 
         route_defs.push(RouteDefinition {
-            route_key: source.route_key,
-            prefix: source.prefix,
-            rewrite_to: source.rewrite_to,
+            route_key: source.route.route_key,
+            prefix: source.route.prefix,
+            rewrite_to: source.route.rewrite_to,
             project_name,
         });
     }
@@ -60,52 +69,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn fetch_project_name(
-    client: &Client,
-    token: &str,
-    repo: &str,
-    repo_ref: &str,
-) -> Result<String, Box<dyn Error>> {
-    let url = format!(
-        "https://api.github.com/repos/{}/contents/wrangler.toml?ref={}",
-        repo, repo_ref
-    );
-
-    let toml_content = client
-        .get(&url)
-        .bearer_auth(token)
-        .header("Accept", "application/vnd.github.raw")
-        .header("User-Agent", "domain-router-ci")
-        .send()?
-        .error_for_status()
-        .map_err(|e| format!("failed to fetch wrangler.toml from {}: {}", repo, e))?
-        .text()?;
-
-    extract_toml_name(&toml_content)
-        .ok_or_else(|| format!("no 'name' field found in {}/wrangler.toml", repo).into())
-}
-
-fn extract_toml_name(toml: &str) -> Option<String> {
-    for line in toml.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("name") {
-            let rest = rest.trim_start();
-            if let Some(rest) = rest.strip_prefix('=') {
-                let val = rest.trim().trim_matches('"');
-                if !val.is_empty() {
-                    return Some(val.to_string());
-                }
-            }
-        }
+fn project_name_for_environment(pages: &PagesConfig, environment: &str) -> String {
+    if environment == "dev" {
+        pages.dev_project_name.clone()
+    } else {
+        pages.project_name.clone()
     }
-    None
 }
 
-fn parse_args(args: Vec<String>) -> (String, String, String, String) {
+fn parse_args(args: Vec<String>) -> (String, String, String) {
     let mut app_sources = String::from("src/app-sources.json");
     let mut output = String::from("src/route-definitions.json");
-    let mut repo_ref = String::from("main");
-    let mut project_suffix = String::new();
+    let mut environment = String::from("prod");
     let mut i = 1;
 
     while i < args.len() {
@@ -118,17 +93,13 @@ fn parse_args(args: Vec<String>) -> (String, String, String, String) {
                 output = args[i + 1].clone();
                 i += 2;
             }
-            "--repo-ref" if i + 1 < args.len() => {
-                repo_ref = args[i + 1].clone();
-                i += 2;
-            }
-            "--project-suffix" if i + 1 < args.len() => {
-                project_suffix = args[i + 1].clone();
+            "--environment" if i + 1 < args.len() => {
+                environment = args[i + 1].clone();
                 i += 2;
             }
             _ => i += 1,
         }
     }
 
-    (app_sources, output, repo_ref, project_suffix)
+    (app_sources, output, environment)
 }
