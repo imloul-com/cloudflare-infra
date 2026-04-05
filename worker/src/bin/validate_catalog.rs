@@ -19,9 +19,24 @@ struct AppDefinition {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RouteConfig {
+    Prefix(String),
+    Expanded(ExpandedRouteConfig),
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RouteConfig {
-    prefix: String,
+struct ExpandedRouteConfig {
+    #[serde(rename = "match")]
+    path_match: String,
+    #[serde(default = "default_route_rewrite")]
+    rewrite: String,
+}
+
+#[derive(Debug)]
+struct NormalizedRouteConfig {
+    path_match: String,
     rewrite: String,
 }
 
@@ -53,10 +68,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut pages_names = HashSet::new();
 
     for app in &catalog.apps {
+        let route = app.route.normalized();
         ensure_non_empty(&app.id, "id")?;
         ensure_non_empty(&app.image, "image")?;
-        ensure_non_empty(&app.route.prefix, "route.prefix")?;
-        ensure_non_empty(&app.route.rewrite, "route.rewrite")?;
+        ensure_non_empty(&route.path_match, "route.match")?;
+        ensure_non_empty(&route.rewrite, "route.rewrite")?;
         ensure_non_empty(&app.env.prod.version, "env.prod.version")?;
         ensure_non_empty(&app.env.prod.pages, "env.prod.pages")?;
         ensure_non_empty(&app.env.dev.version, "env.dev.version")?;
@@ -65,8 +81,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !app_ids.insert(app.id.clone()) {
             return Err(format!("duplicate id '{}'", app.id).into());
         }
-        if !prefixes.insert(app.route.prefix.clone()) {
-            return Err(format!("duplicate prefix '{}'", app.route.prefix).into());
+        if !prefixes.insert(route.path_match.clone()) {
+            return Err(format!("duplicate route.match '{}'", route.path_match).into());
         }
         if !pages_names.insert(app.env.prod.pages.clone()) {
             return Err(format!("duplicate env.prod.pages '{}'", app.env.prod.pages).into());
@@ -75,14 +91,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Err(format!("duplicate env.dev.pages '{}'", app.env.dev.pages).into());
         }
 
-        if !app.route.prefix.starts_with('/') {
-            return Err(format!("prefix must start with '/': {}", app.route.prefix).into());
+        if !route.path_match.starts_with('/') {
+            return Err(format!(
+                "route.match must start with '/': {}",
+                route.path_match
+            )
+            .into());
         }
         if !app.image.starts_with("ghcr.io/") {
             return Err(format!("image must start with ghcr.io/: {}", app.image).into());
         }
-        if !app.route.rewrite.starts_with('/') {
-            return Err(format!("route.rewrite must start with '/': {}", app.route.rewrite).into());
+        if !route.rewrite.starts_with('/') {
+            return Err(format!("route.rewrite must start with '/': {}", route.rewrite).into());
         }
         if !app
             .id
@@ -102,4 +122,23 @@ fn ensure_non_empty(value: &str, field_name: &str) -> Result<(), Box<dyn Error>>
         return Err(format!("{field_name} must be non-empty").into());
     }
     Ok(())
+}
+
+fn default_route_rewrite() -> String {
+    "/".to_string()
+}
+
+impl RouteConfig {
+    fn normalized(&self) -> NormalizedRouteConfig {
+        match self {
+            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
+                path_match: prefix.clone(),
+                rewrite: default_route_rewrite(),
+            },
+            RouteConfig::Expanded(route) => NormalizedRouteConfig {
+                path_match: route.path_match.clone(),
+                rewrite: route.rewrite.clone(),
+            },
+        }
+    }
 }

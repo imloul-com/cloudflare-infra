@@ -17,8 +17,20 @@ struct AppSource {
 }
 
 #[derive(Debug, Deserialize)]
-struct RouteConfig {
-    prefix: String,
+#[serde(untagged)]
+enum RouteConfig {
+    Prefix(String),
+    Expanded {
+        #[serde(rename = "match")]
+        path_match: String,
+        #[serde(default = "default_route_rewrite")]
+        rewrite: String,
+    },
+}
+
+#[derive(Debug)]
+struct NormalizedRouteConfig {
+    path_match: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -63,7 +75,8 @@ fn build_endpoints(base_origin: &str, app_sources: &[AppSource]) -> Vec<String> 
     endpoints.insert(format!("{base_origin}/_health"));
 
     for source in app_sources {
-        let prefix = normalize_prefix(&source.route.prefix);
+        let route = source.route.normalized();
+        let prefix = normalize_prefix(&route.path_match);
         endpoints.insert(format!("{base_origin}{prefix}"));
     }
 
@@ -120,4 +133,21 @@ fn parse_app_sources_path(args: Vec<String>) -> String {
 
 fn required_env(name: &str) -> Result<String, Box<dyn Error>> {
     env::var(name).map_err(|_| format!("missing required environment variable: {name}").into())
+}
+
+fn default_route_rewrite() -> String {
+    "/".to_string()
+}
+
+impl RouteConfig {
+    fn normalized(&self) -> NormalizedRouteConfig {
+        match self {
+            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
+                path_match: prefix.clone(),
+            },
+            RouteConfig::Expanded { path_match, .. } => NormalizedRouteConfig {
+                path_match: path_match.clone(),
+            },
+        }
+    }
 }

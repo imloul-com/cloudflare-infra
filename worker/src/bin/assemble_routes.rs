@@ -16,8 +16,20 @@ struct AppDefinition {
 }
 
 #[derive(Debug, Deserialize)]
-struct RouteConfig {
-    prefix: String,
+#[serde(untagged)]
+enum RouteConfig {
+    Prefix(String),
+    Expanded {
+        #[serde(rename = "match")]
+        path_match: String,
+        #[serde(default = "default_route_rewrite")]
+        rewrite: String,
+    },
+}
+
+#[derive(Debug)]
+struct NormalizedRouteConfig {
+    path_match: String,
     rewrite: String,
 }
 
@@ -54,11 +66,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for source in sources {
         let project_name = project_name_for_environment(&source.env, &environment);
+        let route = source.route.normalize();
 
         route_defs.push(RouteDefinition {
             route_key: source.id,
-            prefix: source.route.prefix,
-            rewrite_to: source.route.rewrite,
+            prefix: route.path_match,
+            rewrite_to: route.rewrite,
             project_name,
         });
     }
@@ -103,4 +116,26 @@ fn parse_args(args: Vec<String>) -> (String, String, String) {
     }
 
     (app_sources, output, environment)
+}
+
+fn default_route_rewrite() -> String {
+    "/".to_string()
+}
+
+impl RouteConfig {
+    fn normalize(self) -> NormalizedRouteConfig {
+        match self {
+            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
+                path_match: prefix,
+                rewrite: default_route_rewrite(),
+            },
+            RouteConfig::Expanded {
+                path_match,
+                rewrite,
+            } => NormalizedRouteConfig {
+                path_match,
+                rewrite,
+            },
+        }
+    }
 }

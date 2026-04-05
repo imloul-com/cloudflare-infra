@@ -1,9 +1,7 @@
 apps:
   - id: aimloul-blog
     image: ghcr.io/imloul-com/aimloul-blog-static
-    route:
-      prefix: /
-      rewrite: /
+    route: /
     env:
       prod:
         version: prod-latest
@@ -14,9 +12,7 @@ apps:
 
   - id: ast-viz
     image: ghcr.io/imloul-com/ast-viz-static
-    route:
-      prefix: /tools/ast-viz
-      rewrite: /
+    route: /tools/ast-viz
     env:
       prod:
         version: prod-latest
