@@ -28,7 +28,7 @@ on:
       - ".github/workflows/deploy-apps.yml"
 
 concurrency:
-  group: deploy-apps-${{ github.ref }}
+  group: deploy-apps-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.environment || github.event_name == 'workflow_dispatch' && inputs.environment || github.ref }}
   cancel-in-progress: true
 
 jobs:
