@@ -7,7 +7,9 @@ apps:
         version: prod-latest
         pages: portfolio
       dev:
-        route: /home
+        route: 
+          match: /home
+          rewrite: /home
         version: dev-latest
         pages: portfolio-dev
 
