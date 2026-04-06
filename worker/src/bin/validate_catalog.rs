@@ -15,7 +15,6 @@ struct AppCatalog {
 struct AppDefinition {
     id: String,
     image: String,
-    route: RouteConfig,
     env: EnvConfig,
 }
 
@@ -51,6 +50,7 @@ struct EnvConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EnvEntry {
+    route: RouteConfig,
     version: String,
     pages: String,
 }
@@ -65,15 +65,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut app_ids = HashSet::new();
-    let mut prefixes = HashSet::new();
+    let mut prod_prefixes = HashSet::new();
+    let mut dev_prefixes = HashSet::new();
     let mut pages_names = HashSet::new();
 
     for app in &catalog.apps {
-        let route = app.route.normalized();
+        let prod_route = app.env.prod.route.normalized();
+        let dev_route = app.env.dev.route.normalized();
+
         ensure_non_empty(&app.id, "id")?;
         ensure_non_empty(&app.image, "image")?;
-        ensure_non_empty(&route.path_match, "route.match")?;
-        ensure_non_empty(&route.rewrite, "route.rewrite")?;
+        ensure_non_empty(&prod_route.path_match, "env.prod.route.match")?;
+        ensure_non_empty(&prod_route.rewrite, "env.prod.route.rewrite")?;
+        ensure_non_empty(&dev_route.path_match, "env.dev.route.match")?;
+        ensure_non_empty(&dev_route.rewrite, "env.dev.route.rewrite")?;
         ensure_non_empty(&app.env.prod.version, "env.prod.version")?;
         ensure_non_empty(&app.env.prod.pages, "env.prod.pages")?;
         ensure_non_empty(&app.env.dev.version, "env.dev.version")?;
@@ -82,8 +87,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !app_ids.insert(app.id.clone()) {
             return Err(format!("duplicate id '{}'", app.id).into());
         }
-        if !prefixes.insert(route.path_match.clone()) {
-            return Err(format!("duplicate route.match '{}'", route.path_match).into());
+        if !prod_prefixes.insert(prod_route.path_match.clone()) {
+            return Err(format!("duplicate env.prod.route.match '{}'", prod_route.path_match).into());
+        }
+        if !dev_prefixes.insert(dev_route.path_match.clone()) {
+            return Err(format!("duplicate env.dev.route.match '{}'", dev_route.path_match).into());
         }
         if !pages_names.insert(app.env.prod.pages.clone()) {
             return Err(format!("duplicate env.prod.pages '{}'", app.env.prod.pages).into());
@@ -92,18 +100,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Err(format!("duplicate env.dev.pages '{}'", app.env.dev.pages).into());
         }
 
-        if !route.path_match.starts_with('/') {
-            return Err(format!(
-                "route.match must start with '/': {}",
-                route.path_match
-            )
-            .into());
+        if !prod_route.path_match.starts_with('/') {
+            return Err(format!("env.prod.route.match must start with '/': {}", prod_route.path_match).into());
+        }
+        if !prod_route.rewrite.starts_with('/') {
+            return Err(format!("env.prod.route.rewrite must start with '/': {}", prod_route.rewrite).into());
+        }
+        if !dev_route.path_match.starts_with('/') {
+            return Err(format!("env.dev.route.match must start with '/': {}", dev_route.path_match).into());
+        }
+        if !dev_route.rewrite.starts_with('/') {
+            return Err(format!("env.dev.route.rewrite must start with '/': {}", dev_route.rewrite).into());
         }
         if !app.image.starts_with("ghcr.io/") {
             return Err(format!("image must start with ghcr.io/: {}", app.image).into());
-        }
-        if !route.rewrite.starts_with('/') {
-            return Err(format!("route.rewrite must start with '/': {}", route.rewrite).into());
         }
         if !app
             .id

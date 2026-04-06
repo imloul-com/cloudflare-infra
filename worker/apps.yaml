@@ -1,22 +1,24 @@
 apps:
   - id: aimloul-blog
     image: ghcr.io/imloul-com/aimloul-blog-static
-    route: /
     env:
       prod:
+        route: /
         version: prod-latest
         pages: portfolio
       dev:
+        route: /home
         version: dev-latest
         pages: portfolio-dev
 
   - id: ast-viz
     image: ghcr.io/imloul-com/ast-viz-static
-    route: /tools/ast-viz
     env:
       prod:
+        route: /tools/ast-viz
         version: prod-latest
         pages: ast-viz
       dev:
+        route: /home/tools/ast-viz
         version: dev-latest
         pages: ast-viz-dev

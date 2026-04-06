@@ -11,11 +11,10 @@ struct AppCatalog {
 #[derive(Debug, Deserialize)]
 struct AppDefinition {
     id: String,
-    route: RouteConfig,
     env: EnvConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 enum RouteConfig {
     Prefix(String),
@@ -41,6 +40,7 @@ struct EnvConfig {
 
 #[derive(Debug, Deserialize)]
 struct EnvEntry {
+    route: RouteConfig,
     pages: String,
 }
 
@@ -65,14 +65,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut route_defs = Vec::with_capacity(sources.len());
 
     for source in sources {
-        let project_name = project_name_for_environment(&source.env, &environment);
-        let route = source.route.normalize();
+        let env_entry = if environment == "dev" {
+            &source.env.dev
+        } else {
+            &source.env.prod
+        };
+        let route = env_entry.route.clone().normalize();
 
         route_defs.push(RouteDefinition {
             route_key: source.id,
             prefix: route.path_match,
             rewrite_to: route.rewrite,
-            project_name,
+            project_name: env_entry.pages.clone(),
         });
     }
 
@@ -81,14 +85,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("Wrote {}", output_path);
 
     Ok(())
-}
-
-fn project_name_for_environment(env: &EnvConfig, environment: &str) -> String {
-    if environment == "dev" {
-        env.dev.pages.clone()
-    } else {
-        env.prod.pages.clone()
-    }
 }
 
 fn parse_args(args: Vec<String>) -> (String, String, String) {
