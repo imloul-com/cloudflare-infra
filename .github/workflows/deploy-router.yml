@@ -171,4 +171,4 @@ jobs:
           CLOUDFLARE_ZONE_NAME: ${{ needs.prepare.outputs.zone_name }}
         run: |
           sleep 3
-          cargo run --quiet --bin uptime_monitor -- --app-sources-path apps.yaml
+          cargo run --quiet --bin uptime_monitor -- --app-sources-path apps.yaml --environment ${{ needs.prepare.outputs.environment }}

@@ -13,6 +13,17 @@ struct AppCatalog {
 
 #[derive(Debug, Deserialize)]
 struct AppSource {
+    env: EnvConfig,
+}
+
+#[derive(Debug, Deserialize)]
+struct EnvConfig {
+    prod: EnvEntry,
+    dev: EnvEntry,
+}
+
+#[derive(Debug, Deserialize)]
+struct EnvEntry {
     route: RouteConfig,
 }
 
@@ -35,7 +46,7 @@ struct NormalizedRouteConfig {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let zone = required_env("CLOUDFLARE_ZONE_NAME")?;
-    let app_sources_path = parse_app_sources_path(env::args().collect());
+    let (app_sources_path, environment) = parse_args(env::args().collect());
     let catalog: AppCatalog = serde_yaml::from_str(&fs::read_to_string(&app_sources_path)?)?;
     let app_sources = catalog.apps;
 
@@ -44,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let base_origin = normalize_zone_to_origin(&zone)?;
-    let endpoints = build_endpoints(&base_origin, &app_sources);
+    let endpoints = build_endpoints(&base_origin, &app_sources, &environment);
 
     let client = Client::builder().timeout(Duration::from_secs(15)).build()?;
     let mut failed = false;
@@ -70,12 +81,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn build_endpoints(base_origin: &str, app_sources: &[AppSource]) -> Vec<String> {
+fn build_endpoints(base_origin: &str, app_sources: &[AppSource], environment: &str) -> Vec<String> {
     let mut endpoints = BTreeSet::new();
     endpoints.insert(format!("{base_origin}/_health"));
 
     for source in app_sources {
-        let route = source.route.normalized();
+        let env_entry = if environment == "dev" {
+            &source.env.dev
+        } else {
+            &source.env.prod
+        };
+        let route = env_entry.route.normalized();
         let prefix = normalize_prefix(&route.path_match);
         endpoints.insert(format!("{base_origin}{prefix}"));
     }
@@ -115,20 +131,26 @@ fn normalize_prefix(prefix: &str) -> String {
     }
 }
 
-fn parse_app_sources_path(args: Vec<String>) -> String {
+fn parse_args(args: Vec<String>) -> (String, String) {
     let mut i = 1usize;
     let mut path = String::from("apps.yaml");
+    let mut environment = String::from("prod");
 
     while i < args.len() {
-        if args[i] == "--app-sources-path" && i + 1 < args.len() {
-            path = args[i + 1].clone();
-            i += 2;
-        } else {
-            i += 1;
+        match args[i].as_str() {
+            "--app-sources-path" if i + 1 < args.len() => {
+                path = args[i + 1].clone();
+                i += 2;
+            }
+            "--environment" if i + 1 < args.len() => {
+                environment = args[i + 1].clone();
+                i += 2;
+            }
+            _ => i += 1,
         }
     }
 
-    path
+    (path, environment)
 }
 
 fn required_env(name: &str) -> Result<String, Box<dyn Error>> {

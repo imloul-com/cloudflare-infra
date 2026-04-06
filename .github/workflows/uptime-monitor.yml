@@ -26,4 +26,4 @@ jobs:
           CLOUDFLARE_ZONE_NAME: ${{ vars.CLOUDFLARE_ZONE_NAME }}
         run: |
           cargo run --manifest-path worker/Cargo.toml --quiet --bin uptime_monitor -- \
-            --app-sources-path worker/apps.yaml
+            --app-sources-path worker/apps.yaml --environment prod
