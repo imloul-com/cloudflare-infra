@@ -2,11 +2,11 @@ name: Terraform Cloudflare Infra
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - "terraform/**"
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - "terraform/**"
   workflow_dispatch:
@@ -177,12 +177,12 @@ jobs:
     name: Apply
     runs-on: ubuntu-latest
     needs: plan
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && (needs.plan.outputs.has_changes == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_apply))
+    if: github.ref == 'refs/heads/main' && (needs.plan.outputs.has_changes == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_apply))
     concurrency:
-      group: terraform-apply-${{ github.ref_name }}
+      group: terraform-apply
       cancel-in-progress: false
     environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
+      name: production
     defaults:
       run:
         working-directory: terraform

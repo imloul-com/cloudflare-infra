@@ -2,7 +2,7 @@ name: Build Router Worker Artifact
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - "worker/src/**"
       - "worker/apps.yaml"
@@ -92,18 +92,16 @@ jobs:
           short_sha="${GITHUB_SHA::12}"
           sha_tag="sha-${short_sha}"
 
-          if [ -n "${{ inputs.channel }}" ]; then
-            channel_tag="${{ inputs.channel }}"
-          elif [ "${GITHUB_REF}" = "refs/heads/dev" ]; then
-            channel_tag="dev-latest"
-          else
-            channel_tag="prod-latest"
-          fi
-
           artifact="release/worker-build.tar.gz"
           media_type="application/vnd.myportfolio.domain-router.worker.layer.v1+tar"
           oras push "${image}:${sha_tag}" "${artifact}:${media_type}"
-          oras push "${image}:${channel_tag}" "${artifact}:${media_type}"
+
+          if [ -n "${{ inputs.channel }}" ]; then
+            oras push "${image}:${{ inputs.channel }}" "${artifact}:${media_type}"
+          else
+            oras push "${image}:prod-latest" "${artifact}:${media_type}"
+            oras push "${image}:dev-latest" "${artifact}:${media_type}"
+          fi
 
       - name: Upload packaged worker artifact
         uses: actions/upload-artifact@v7

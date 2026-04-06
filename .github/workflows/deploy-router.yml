@@ -4,34 +4,19 @@ on:
   workflow_run:
     workflows: ["Build Router Worker Artifact"]
     types: [completed]
-    branches: [main, dev]
+    branches: [main]
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Target environment"
-        required: false
-        default: "prod"
-        type: choice
-        options: [prod, dev]
       version_override:
         description: "Override router artifact tag (optional)"
         required: false
         default: ""
         type: string
 
-concurrency:
-  group: deploy-router-${{ github.event.workflow_run.head_branch || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   prepare:
     runs-on: ubuntu-latest
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    outputs:
-      environment: ${{ steps.env.outputs.name }}
-      worker_name: ${{ steps.env.outputs.worker_name }}
-      zone_name: ${{ steps.env.outputs.zone_name }}
-      router_artifact_tag: ${{ steps.env.outputs.router_artifact_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,44 +35,16 @@ jobs:
         working-directory: worker
         run: cargo run --quiet --bin validate_catalog -- --app-sources-path apps.yaml
 
-      - name: Determine deploy environment
-        id: env
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            branch="${{ github.event.workflow_run.head_branch }}"
-            env_name="$( [ "$branch" = "dev" ] && echo "dev" || echo "prod" )"
-            version_override=""
-          else
-            env_name="${{ inputs.environment }}"
-            version_override="${{ inputs.version_override }}"
-          fi
-
-          if [ -z "$env_name" ]; then
-            env_name="prod"
-          fi
-
-          if [ "$env_name" = "dev" ]; then
-            echo "name=dev" >> "$GITHUB_OUTPUT"
-            echo "worker_name=domain-router-dev" >> "$GITHUB_OUTPUT"
-            echo "zone_name=dev.imloul.com" >> "$GITHUB_OUTPUT"
-            default_router_tag="dev-latest"
-          else
-            echo "name=prod" >> "$GITHUB_OUTPUT"
-            echo "worker_name=domain-router" >> "$GITHUB_OUTPUT"
-            echo "zone_name=${{ vars.CLOUDFLARE_ZONE_NAME }}" >> "$GITHUB_OUTPUT"
-            default_router_tag="prod-latest"
-          fi
-
-          router_artifact_tag="$default_router_tag"
-          if [ -n "$version_override" ]; then
-            router_artifact_tag="$version_override"
-          fi
-          echo "router_artifact_tag=$router_artifact_tag" >> "$GITHUB_OUTPUT"
-
   deploy_router:
-    name: Deploy router worker
+    name: Deploy router worker (${{ matrix.environment }})
     runs-on: ubuntu-latest
     needs: prepare
+    strategy:
+      matrix:
+        environment: [prod, dev]
+    concurrency:
+      group: deploy-router-${{ matrix.environment }}
+      cancel-in-progress: true
     defaults:
       run:
         working-directory: worker
@@ -103,6 +60,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: worker
+
+      - name: Resolve environment config
+        id: env
+        run: |
+          if [ "${{ matrix.environment }}" = "dev" ]; then
+            echo "worker_name=domain-router-dev" >> "$GITHUB_OUTPUT"
+            echo "zone_name=dev.imloul.com" >> "$GITHUB_OUTPUT"
+            default_tag="dev-latest"
+          else
+            echo "worker_name=domain-router" >> "$GITHUB_OUTPUT"
+            echo "zone_name=${{ vars.CLOUDFLARE_ZONE_NAME }}" >> "$GITHUB_OUTPUT"
+            default_tag="prod-latest"
+          fi
+          version_override="${{ inputs.version_override }}"
+          echo "router_artifact_tag=${version_override:-$default_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Setup ORAS
         uses: oras-project/setup-oras@v1
@@ -120,7 +92,7 @@ jobs:
           set -euo pipefail
           owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           image="ghcr.io/${owner}/domain-router-worker"
-          artifact_ref="${image}:${{ needs.prepare.outputs.router_artifact_tag }}"
+          artifact_ref="${image}:${{ steps.env.outputs.router_artifact_tag }}"
           mkdir -p .artifact
           cd .artifact
           echo "Pulling ${artifact_ref}"
@@ -135,7 +107,7 @@ jobs:
 
       - name: Assemble route definitions from catalog
         run: |
-          make assemble-routes ENVIRONMENT="${{ needs.prepare.outputs.environment }}"
+          make assemble-routes ENVIRONMENT="${{ matrix.environment }}"
           jq . src/route-definitions.json
 
       - name: Resolve Pages origins
@@ -164,11 +136,11 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: worker
           wranglerVersion: "4.80.0"
-          command: deploy --config wrangler.deploy.generated.toml --name ${{ needs.prepare.outputs.worker_name }}${{ steps.origins.outputs.deploy_var_args }}
+          command: deploy --config wrangler.deploy.generated.toml --name ${{ steps.env.outputs.worker_name }}${{ steps.origins.outputs.deploy_var_args }}
 
       - name: Post-deploy smoke test
         env:
-          CLOUDFLARE_ZONE_NAME: ${{ needs.prepare.outputs.zone_name }}
+          CLOUDFLARE_ZONE_NAME: ${{ steps.env.outputs.zone_name }}
         run: |
           sleep 3
-          cargo run --quiet --bin uptime_monitor -- --app-sources-path apps.yaml --environment ${{ needs.prepare.outputs.environment }}
+          cargo run --quiet --bin uptime_monitor -- --app-sources-path apps.yaml --environment ${{ matrix.environment }}
