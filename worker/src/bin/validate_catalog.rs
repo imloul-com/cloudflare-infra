@@ -1,3 +1,4 @@
+use domain_router::catalog::{parse_app_sources_path, RouteConfig};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::env;
@@ -16,28 +17,6 @@ struct AppDefinition {
     id: String,
     image: String,
     env: EnvConfig,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RouteConfig {
-    Prefix(String),
-    Expanded(ExpandedRouteConfig),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ExpandedRouteConfig {
-    #[serde(rename = "match")]
-    path_match: String,
-    #[serde(default = "default_route_rewrite")]
-    rewrite: String,
-}
-
-#[derive(Debug)]
-struct NormalizedRouteConfig {
-    path_match: String,
-    rewrite: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,8 +49,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut pages_names = HashSet::new();
 
     for app in &catalog.apps {
-        let prod_route = app.env.prod.route.normalized();
-        let dev_route = app.env.dev.route.normalized();
+        let prod_route = app.env.prod.route.normalize();
+        let dev_route = app.env.dev.route.normalize();
 
         ensure_non_empty(&app.id, "id")?;
         ensure_non_empty(&app.image, "image")?;
@@ -88,10 +67,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Err(format!("duplicate id '{}'", app.id).into());
         }
         if !prod_prefixes.insert(prod_route.path_match.clone()) {
-            return Err(format!("duplicate env.prod.route.match '{}'", prod_route.path_match).into());
+            return Err(format!(
+                "duplicate env.prod.route.match '{}'",
+                prod_route.path_match
+            )
+            .into());
         }
         if !dev_prefixes.insert(dev_route.path_match.clone()) {
-            return Err(format!("duplicate env.dev.route.match '{}'", dev_route.path_match).into());
+            return Err(format!(
+                "duplicate env.dev.route.match '{}'",
+                dev_route.path_match
+            )
+            .into());
         }
         if !pages_names.insert(app.env.prod.pages.clone()) {
             return Err(format!("duplicate env.prod.pages '{}'", app.env.prod.pages).into());
@@ -101,16 +88,32 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if !prod_route.path_match.starts_with('/') {
-            return Err(format!("env.prod.route.match must start with '/': {}", prod_route.path_match).into());
+            return Err(format!(
+                "env.prod.route.match must start with '/': {}",
+                prod_route.path_match
+            )
+            .into());
         }
         if !prod_route.rewrite.starts_with('/') {
-            return Err(format!("env.prod.route.rewrite must start with '/': {}", prod_route.rewrite).into());
+            return Err(format!(
+                "env.prod.route.rewrite must start with '/': {}",
+                prod_route.rewrite
+            )
+            .into());
         }
         if !dev_route.path_match.starts_with('/') {
-            return Err(format!("env.dev.route.match must start with '/': {}", dev_route.path_match).into());
+            return Err(format!(
+                "env.dev.route.match must start with '/': {}",
+                dev_route.path_match
+            )
+            .into());
         }
         if !dev_route.rewrite.starts_with('/') {
-            return Err(format!("env.dev.route.rewrite must start with '/': {}", dev_route.rewrite).into());
+            return Err(format!(
+                "env.dev.route.rewrite must start with '/': {}",
+                dev_route.rewrite
+            )
+            .into());
         }
         if !app.image.starts_with("ghcr.io/") {
             return Err(format!("image must start with ghcr.io/: {}", app.image).into());
@@ -133,39 +136,4 @@ fn ensure_non_empty(value: &str, field_name: &str) -> Result<(), Box<dyn Error>>
         return Err(format!("{field_name} must be non-empty").into());
     }
     Ok(())
-}
-
-fn parse_app_sources_path(args: Vec<String>) -> String {
-    let mut i = 1usize;
-    let mut path = String::from("apps.yaml");
-
-    while i < args.len() {
-        if args[i] == "--app-sources-path" && i + 1 < args.len() {
-            path = args[i + 1].clone();
-            i += 2;
-        } else {
-            i += 1;
-        }
-    }
-
-    path
-}
-
-fn default_route_rewrite() -> String {
-    "/".to_string()
-}
-
-impl RouteConfig {
-    fn normalized(&self) -> NormalizedRouteConfig {
-        match self {
-            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
-                path_match: prefix.clone(),
-                rewrite: default_route_rewrite(),
-            },
-            RouteConfig::Expanded(route) => NormalizedRouteConfig {
-                path_match: route.path_match.clone(),
-                rewrite: route.rewrite.clone(),
-            },
-        }
-    }
 }

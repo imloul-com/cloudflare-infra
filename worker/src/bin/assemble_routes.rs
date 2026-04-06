@@ -1,3 +1,4 @@
+use domain_router::catalog::{parse_assemble_args, RouteConfig};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
@@ -12,24 +13,6 @@ struct AppCatalog {
 struct AppDefinition {
     id: String,
     env: EnvConfig,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(untagged)]
-enum RouteConfig {
-    Prefix(String),
-    Expanded {
-        #[serde(rename = "match")]
-        path_match: String,
-        #[serde(default = "default_route_rewrite")]
-        rewrite: String,
-    },
-}
-
-#[derive(Debug)]
-struct NormalizedRouteConfig {
-    path_match: String,
-    rewrite: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,7 +37,7 @@ struct RouteDefinition {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let (app_sources_path, output_path, environment) = parse_args(env::args().collect());
+    let (app_sources_path, output_path, environment) = parse_assemble_args(env::args().collect());
     let catalog: AppCatalog = serde_yaml::from_str(&fs::read_to_string(&app_sources_path)?)?;
     let sources = catalog.apps;
 
@@ -70,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         } else {
             &source.env.prod
         };
-        let route = env_entry.route.clone().normalize();
+        let route = env_entry.route.normalize();
 
         route_defs.push(RouteDefinition {
             route_key: source.id,
@@ -85,53 +68,4 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("Wrote {}", output_path);
 
     Ok(())
-}
-
-fn parse_args(args: Vec<String>) -> (String, String, String) {
-    let mut app_sources = String::from("apps.yaml");
-    let mut output = String::from("src/route-definitions.json");
-    let mut environment = String::from("prod");
-    let mut i = 1;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--app-sources-path" if i + 1 < args.len() => {
-                app_sources = args[i + 1].clone();
-                i += 2;
-            }
-            "--output-path" if i + 1 < args.len() => {
-                output = args[i + 1].clone();
-                i += 2;
-            }
-            "--environment" if i + 1 < args.len() => {
-                environment = args[i + 1].clone();
-                i += 2;
-            }
-            _ => i += 1,
-        }
-    }
-
-    (app_sources, output, environment)
-}
-
-fn default_route_rewrite() -> String {
-    "/".to_string()
-}
-
-impl RouteConfig {
-    fn normalize(self) -> NormalizedRouteConfig {
-        match self {
-            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
-                path_match: prefix,
-                rewrite: default_route_rewrite(),
-            },
-            RouteConfig::Expanded {
-                path_match,
-                rewrite,
-            } => NormalizedRouteConfig {
-                path_match,
-                rewrite,
-            },
-        }
-    }
 }

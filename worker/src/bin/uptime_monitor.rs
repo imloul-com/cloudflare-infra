@@ -1,3 +1,4 @@
+use domain_router::catalog::{parse_uptime_args, RouteConfig};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -27,26 +28,9 @@ struct EnvEntry {
     route: RouteConfig,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RouteConfig {
-    Prefix(String),
-    Expanded {
-        #[serde(rename = "match")]
-        path_match: String,
-        #[serde(default = "default_route_rewrite")]
-        rewrite: String,
-    },
-}
-
-#[derive(Debug)]
-struct NormalizedRouteConfig {
-    path_match: String,
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
     let zone = required_env("CLOUDFLARE_ZONE_NAME")?;
-    let (app_sources_path, environment) = parse_args(env::args().collect());
+    let (app_sources_path, environment) = parse_uptime_args(env::args().collect());
     let catalog: AppCatalog = serde_yaml::from_str(&fs::read_to_string(&app_sources_path)?)?;
     let app_sources = catalog.apps;
 
@@ -91,7 +75,7 @@ fn build_endpoints(base_origin: &str, app_sources: &[AppSource], environment: &s
         } else {
             &source.env.prod
         };
-        let route = env_entry.route.normalized();
+        let route = env_entry.route.normalize();
         let prefix = normalize_prefix(&route.path_match);
         endpoints.insert(format!("{base_origin}{prefix}"));
     }
@@ -131,45 +115,6 @@ fn normalize_prefix(prefix: &str) -> String {
     }
 }
 
-fn parse_args(args: Vec<String>) -> (String, String) {
-    let mut i = 1usize;
-    let mut path = String::from("apps.yaml");
-    let mut environment = String::from("prod");
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--app-sources-path" if i + 1 < args.len() => {
-                path = args[i + 1].clone();
-                i += 2;
-            }
-            "--environment" if i + 1 < args.len() => {
-                environment = args[i + 1].clone();
-                i += 2;
-            }
-            _ => i += 1,
-        }
-    }
-
-    (path, environment)
-}
-
 fn required_env(name: &str) -> Result<String, Box<dyn Error>> {
     env::var(name).map_err(|_| format!("missing required environment variable: {name}").into())
-}
-
-fn default_route_rewrite() -> String {
-    "/".to_string()
-}
-
-impl RouteConfig {
-    fn normalized(&self) -> NormalizedRouteConfig {
-        match self {
-            RouteConfig::Prefix(prefix) => NormalizedRouteConfig {
-                path_match: prefix.clone(),
-            },
-            RouteConfig::Expanded { path_match, .. } => NormalizedRouteConfig {
-                path_match: path_match.clone(),
-            },
-        }
-    }
 }
