@@ -43,6 +43,14 @@ impl RouteConfig {
     }
 }
 
+/// App-level default route, optionally overridden per environment (`env.prod.route` / `env.dev.route`).
+pub fn resolve_route(app_default: &RouteConfig, env_override: Option<&RouteConfig>) -> NormalizedRoute {
+    match env_override {
+        Some(r) => r.normalize(),
+        None => app_default.normalize(),
+    }
+}
+
 pub fn parse_app_sources_path(args: Vec<String>) -> String {
     let mut i = 1usize;
     let mut path = String::from("apps.yaml");

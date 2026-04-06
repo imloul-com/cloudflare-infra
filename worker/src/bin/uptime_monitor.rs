@@ -1,4 +1,4 @@
-use domain_router::catalog::{parse_uptime_args, RouteConfig};
+use domain_router::catalog::{parse_uptime_args, resolve_route, RouteConfig};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -14,6 +14,7 @@ struct AppCatalog {
 
 #[derive(Debug, Deserialize)]
 struct AppSource {
+    route: RouteConfig,
     env: EnvConfig,
 }
 
@@ -25,7 +26,8 @@ struct EnvConfig {
 
 #[derive(Debug, Deserialize)]
 struct EnvEntry {
-    route: RouteConfig,
+    #[serde(default)]
+    route: Option<RouteConfig>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -75,7 +77,7 @@ fn build_endpoints(base_origin: &str, app_sources: &[AppSource], environment: &s
         } else {
             &source.env.prod
         };
-        let route = env_entry.route.normalize();
+        let route = resolve_route(&source.route, env_entry.route.as_ref());
         let prefix = normalize_prefix(&route.path_match);
         endpoints.insert(format!("{base_origin}{prefix}"));
     }

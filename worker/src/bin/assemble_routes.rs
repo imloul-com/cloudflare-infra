@@ -1,4 +1,4 @@
-use domain_router::catalog::{parse_assemble_args, RouteConfig};
+use domain_router::catalog::{parse_assemble_args, resolve_route, RouteConfig};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
@@ -12,6 +12,7 @@ struct AppCatalog {
 #[derive(Debug, Deserialize)]
 struct AppDefinition {
     id: String,
+    route: RouteConfig,
     env: EnvConfig,
 }
 
@@ -23,7 +24,8 @@ struct EnvConfig {
 
 #[derive(Debug, Deserialize)]
 struct EnvEntry {
-    route: RouteConfig,
+    #[serde(default)]
+    route: Option<RouteConfig>,
     pages: String,
 }
 
@@ -53,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         } else {
             &source.env.prod
         };
-        let route = env_entry.route.normalize();
+        let route = resolve_route(&source.route, env_entry.route.as_ref());
 
         route_defs.push(RouteDefinition {
             route_key: source.id,

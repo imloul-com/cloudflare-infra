@@ -1,4 +1,4 @@
-use domain_router::catalog::{parse_app_sources_path, RouteConfig};
+use domain_router::catalog::{parse_app_sources_path, resolve_route, RouteConfig};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::env;
@@ -16,6 +16,7 @@ struct AppCatalog {
 struct AppDefinition {
     id: String,
     image: String,
+    route: RouteConfig,
     env: EnvConfig,
 }
 
@@ -29,7 +30,8 @@ struct EnvConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EnvEntry {
-    route: RouteConfig,
+    #[serde(default)]
+    route: Option<RouteConfig>,
     version: String,
     pages: String,
 }
@@ -49,15 +51,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut pages_names = HashSet::new();
 
     for app in &catalog.apps {
-        let prod_route = app.env.prod.route.normalize();
-        let dev_route = app.env.dev.route.normalize();
+        let prod_route = resolve_route(&app.route, app.env.prod.route.as_ref());
+        let dev_route = resolve_route(&app.route, app.env.dev.route.as_ref());
 
         ensure_non_empty(&app.id, "id")?;
         ensure_non_empty(&app.image, "image")?;
-        ensure_non_empty(&prod_route.path_match, "env.prod.route.match")?;
-        ensure_non_empty(&prod_route.rewrite, "env.prod.route.rewrite")?;
-        ensure_non_empty(&dev_route.path_match, "env.dev.route.match")?;
-        ensure_non_empty(&dev_route.rewrite, "env.dev.route.rewrite")?;
+        ensure_non_empty(&prod_route.path_match, "prod route path_match")?;
+        ensure_non_empty(&prod_route.rewrite, "prod route rewrite")?;
+        ensure_non_empty(&dev_route.path_match, "dev route path_match")?;
+        ensure_non_empty(&dev_route.rewrite, "dev route rewrite")?;
         ensure_non_empty(&app.env.prod.version, "env.prod.version")?;
         ensure_non_empty(&app.env.prod.pages, "env.prod.pages")?;
         ensure_non_empty(&app.env.dev.version, "env.dev.version")?;
@@ -68,14 +70,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         if !prod_prefixes.insert(prod_route.path_match.clone()) {
             return Err(format!(
-                "duplicate env.prod.route.match '{}'",
+                "duplicate prod route path_match '{}'",
                 prod_route.path_match
             )
             .into());
         }
         if !dev_prefixes.insert(dev_route.path_match.clone()) {
             return Err(format!(
-                "duplicate env.dev.route.match '{}'",
+                "duplicate dev route path_match '{}'",
                 dev_route.path_match
             )
             .into());
@@ -89,28 +91,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if !prod_route.path_match.starts_with('/') {
             return Err(format!(
-                "env.prod.route.match must start with '/': {}",
+                "prod route path_match must start with '/': {}",
                 prod_route.path_match
             )
             .into());
         }
         if !prod_route.rewrite.starts_with('/') {
             return Err(format!(
-                "env.prod.route.rewrite must start with '/': {}",
+                "prod route rewrite must start with '/': {}",
                 prod_route.rewrite
             )
             .into());
         }
         if !dev_route.path_match.starts_with('/') {
             return Err(format!(
-                "env.dev.route.match must start with '/': {}",
+                "dev route path_match must start with '/': {}",
                 dev_route.path_match
             )
             .into());
         }
         if !dev_route.rewrite.starts_with('/') {
             return Err(format!(
-                "env.dev.route.rewrite must start with '/': {}",
+                "dev route rewrite must start with '/': {}",
                 dev_route.rewrite
             )
             .into());
