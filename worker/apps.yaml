@@ -20,3 +20,14 @@ apps:
       dev:
         version: dev-latest
         pages: ast-viz-dev
+        
+  - id: bloom-filter
+    image: ghcr.io/imloul-com/bloom-filter-static
+    route: /tools/bloom-filter
+    env:
+      prod:
+        version: prod-latest
+        pages: bloom-filter
+      dev:
+        version: dev-latest
+        pages: bloom-filter-dev

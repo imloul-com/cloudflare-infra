@@ -38,6 +38,12 @@ variable "ast_viz_pages_project_name" {
   default     = "ast-viz"
 }
 
+variable "bloom_filter_pages_project_name" {
+  description = "Production Cloudflare Pages project name for bloom-filter"
+  type        = string
+  default     = "bloom-filter"
+}
+
 variable "dev_project_suffix" {
   description = "Suffix appended to production project names for dev projects"
   type        = string
@@ -47,7 +53,7 @@ variable "dev_project_suffix" {
 variable "manage_prod_pages_projects" {
   description = "Whether Terraform should manage production Pages projects in addition to dev projects"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "apex_proxy_ipv4" {

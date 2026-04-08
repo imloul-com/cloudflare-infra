@@ -9,11 +9,13 @@ locals {
   managed_pages_projects = toset(concat(
     [
       "${var.portfolio_pages_project_name}${var.dev_project_suffix}",
-      "${var.ast_viz_pages_project_name}${var.dev_project_suffix}"
+      "${var.ast_viz_pages_project_name}${var.dev_project_suffix}",
+      "${var.bloom_filter_pages_project_name}${var.dev_project_suffix}"
     ],
     var.manage_prod_pages_projects ? [
       var.portfolio_pages_project_name,
-      var.ast_viz_pages_project_name
+      var.ast_viz_pages_project_name,
+      var.bloom_filter_pages_project_name
     ] : []
   ))
 }
