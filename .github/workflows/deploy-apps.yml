@@ -31,11 +31,14 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      version_override: ${{ steps.env.outputs.version_override }}
-      matrix: ${{ steps.catalog.outputs.matrix }}
+      version_override: ${{ steps.inputs.outputs.version_override }}
+      matrix: ${{ steps.matrix.outputs.value }}
+      has_changes: ${{ steps.matrix.outputs.has_changes }}
     steps:
       - uses: actions/checkout@v4
         with:
+          # Need the previous commit so `git show ${before}:worker/apps.yaml`
+          # works for the diff_versions path on push events.
           fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
@@ -50,78 +53,125 @@ jobs:
         working-directory: worker
         run: cargo run --quiet --bin validate_catalog -- --app-sources-path apps.yaml
 
-      - name: Resolve deploy inputs
-        id: env
+      - name: Resolve dispatch inputs
+        id: inputs
         run: |
           version_override=""
-          target_app_id=""
-
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             version_override="${{ inputs.version_override }}"
-            target_app_id="${{ inputs.target_app_id }}"
-          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            version_override="${{ github.event.client_payload.version_override }}"
-            published_app="${{ github.event.client_payload.app }}"
-            target_app_id="${published_app##*/}"
           fi
-
           echo "version_override=$version_override" >> "$GITHUB_OUTPUT"
-          echo "target_app_id=$target_app_id" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve target environments
-        id: envs
+      - name: Compute (app, environment) pairs to deploy
+        id: pairs
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            envs='["${{ inputs.environment }}"]'
-          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            envs='["${{ github.event.client_payload.environment }}"]'
-          else
-            envs='["prod","dev"]'
-          fi
-          echo "json=$envs" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            push)
+              # GitOps path: an app CI bumped a version: line in apps.yaml
+              # and pushed to main. Diff the parent commit's apps.yaml
+              # against the current one and only deploy what changed.
+              # Re-runs and infra-only edits to deploy-apps.yml (which is
+              # in the path filter) produce an empty diff and short-circuit
+              # via has_changes=false.
+              before="${{ github.event.before }}"
+              if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+                echo "no parent commit, skipping diff"
+                pairs='[]'
+              else
+                if ! git show "${before}:worker/apps.yaml" > /tmp/old-apps.yaml 2>/dev/null; then
+                  # apps.yaml didn't exist in the parent commit (first push)
+                  echo 'apps: []' > /tmp/old-apps.yaml
+                fi
+                pairs=$(cd worker && cargo run --quiet --bin diff_versions -- \
+                  --old /tmp/old-apps.yaml --new apps.yaml)
+              fi
+              ;;
+            workflow_dispatch)
+              target="${{ inputs.target_app_id }}"
+              env="${{ inputs.environment }}"
+              if [ -n "$target" ]; then
+                pairs=$(jq -nc --arg a "$target" --arg e "$env" '[{appId:$a, environment:$e}]')
+              else
+                pairs=$(yq -o json '.' worker/apps.yaml | jq -c \
+                  --arg e "$env" '[ .apps[] | {appId: .id, environment: $e} ]')
+              fi
+              ;;
+            repository_dispatch)
+              # Legacy path. Removed from app repos in F4.4 once they switch
+              # to the bump-and-push model; left here so in-flight dispatches
+              # during the rollout window still deploy.
+              published_app="${{ github.event.client_payload.app }}"
+              app_id="${published_app##*/}"
+              env="${{ github.event.client_payload.environment }}"
+              pairs=$(jq -nc --arg a "$app_id" --arg e "$env" '[{appId:$a, environment:$e}]')
+              ;;
+            *)
+              pairs='[]'
+              ;;
+          esac
+          echo "pairs: $pairs"
+          echo "value=$pairs" >> "$GITHUB_OUTPUT"
 
-      - name: Build app deployment matrix from catalog
-        id: catalog
+      - name: Enrich pairs and validate Terraform drift
+        id: matrix
         run: |
+          set -euo pipefail
+          pairs='${{ steps.pairs.outputs.value }}'
+
+          # Drift check: every Pages project name in apps.yaml (both prod
+          # and dev) must exist in terraform/variables.tf.
           while IFS= read -r name; do
             if ! grep -q "\"${name}\"" terraform/variables.tf; then
               echo "Terraform variables drift: missing project name '${name}'" >&2
               exit 1
             fi
-          done < <(yq -o json '.' worker/apps.yaml | jq -r '.apps[].env.prod.pages')
+          done < <(yq -o json '.' worker/apps.yaml | jq -r '.apps[].env.prod.pages, .apps[].env.dev.pages')
 
-          target_app_id="${{ steps.env.outputs.target_app_id }}"
-          envs='${{ steps.envs.outputs.json }}'
+          if [ "$pairs" = "[]" ] || [ -z "$pairs" ]; then
+            echo "No (app, environment) pairs to deploy — nothing changed."
+            echo "value=[]" >> "$GITHUB_OUTPUT"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           matrix=$(yq -o json '.' worker/apps.yaml | jq -c \
-            --arg target "$target_app_id" \
-            --argjson envs "$envs" '
-            .apps
-            | if $target != "" then map(select(.id == $target)) else . end
-            | if length == 0 then error("app not found: \($target)") else . end
-            | [
-                .[] as $app |
-                $envs[] as $env |
-                {
-                  appId: $app.id,
-                  environment: $env,
-                  pagesProject: (if $env == "dev" then $app.env.dev.pages else $app.env.prod.pages end),
-                  image: $app.image,
-                  version: (if $env == "dev" then $app.env.dev.version else $app.env.prod.version end)
-                }
-              ]
-          ')
+            --argjson pairs "$pairs" '
+              .apps as $apps
+              | $pairs
+              | map(
+                  . as $pair
+                  | ($apps[] | select(.id == $pair.appId)) as $app
+                  | {
+                      appId: $pair.appId,
+                      environment: $pair.environment,
+                      image: $app.image,
+                      pagesProject: (if $pair.environment == "dev" then $app.env.dev.pages else $app.env.prod.pages end),
+                      version: (if $pair.environment == "dev" then $app.env.dev.version else $app.env.prod.version end)
+                    }
+                )
+            ')
 
-          if [ -z "$matrix" ] || [ "$matrix" = "[]" ]; then
-            echo "deployment matrix is empty" >&2
+          # If a pair references an app id not in apps.yaml, the jq map
+          # silently drops it. Catch that here so a typo in a legacy
+          # repository_dispatch payload fails loudly.
+          expected=$(echo "$pairs" | jq 'length')
+          actual=$(echo "$matrix" | jq 'length')
+          if [ "$expected" != "$actual" ]; then
+            echo "matrix expansion lost entries (pairs=$expected matrix=$actual)" >&2
+            echo "pairs: $pairs" >&2
+            echo "matrix: $matrix" >&2
             exit 1
           fi
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "matrix: $matrix"
+          echo "value=$matrix" >> "$GITHUB_OUTPUT"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
 
   deploy_apps:
     name: Deploy ${{ matrix.appId }} (${{ matrix.environment }})
     runs-on: ubuntu-latest
     needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true'
     concurrency:
       group: deploy-apps-${{ matrix.appId }}-${{ matrix.environment }}
       cancel-in-progress: true

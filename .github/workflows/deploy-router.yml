@@ -39,9 +39,15 @@ jobs:
     name: Deploy router worker (${{ matrix.environment }})
     runs-on: ubuntu-latest
     needs: prepare
+    # Sequential dev → prod with fail-fast. dev deploys first; its
+    # post-deploy smoke test must pass before prod is touched. If the
+    # dev leg fails (build, deploy, or smoke), the queued prod leg is
+    # cancelled and prod stays on the previous worker version.
     strategy:
+      fail-fast: true
+      max-parallel: 1
       matrix:
-        environment: [prod, dev]
+        environment: [dev, prod]
     concurrency:
       group: deploy-router-${{ matrix.environment }}
       cancel-in-progress: true

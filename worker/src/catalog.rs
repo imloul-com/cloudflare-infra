@@ -115,3 +115,62 @@ pub fn parse_uptime_args(args: Vec<String>) -> (String, String) {
 
     (path, environment)
 }
+
+/// Parses CLI args for `bump_version`. Returns `(app_id, environment, version, apps_yaml_path)`.
+/// `--app`, `--env`, and `--version` are required (validated by the caller); `--apps-yaml`
+/// defaults to `worker/apps.yaml`.
+pub fn parse_bump_args(args: Vec<String>) -> (String, String, String, String) {
+    let mut app = String::new();
+    let mut environment = String::new();
+    let mut version = String::new();
+    let mut path = String::from("worker/apps.yaml");
+    let mut i = 1usize;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--app" if i + 1 < args.len() => {
+                app = args[i + 1].clone();
+                i += 2;
+            }
+            "--env" if i + 1 < args.len() => {
+                environment = args[i + 1].clone();
+                i += 2;
+            }
+            "--version" if i + 1 < args.len() => {
+                version = args[i + 1].clone();
+                i += 2;
+            }
+            "--apps-yaml" if i + 1 < args.len() => {
+                path = args[i + 1].clone();
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
+
+    (app, environment, version, path)
+}
+
+/// Parses CLI args for `diff_versions`. Returns `(old_path, new_path)`.
+/// Both required.
+pub fn parse_diff_args(args: Vec<String>) -> (String, String) {
+    let mut old_path = String::new();
+    let mut new_path = String::new();
+    let mut i = 1usize;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--old" if i + 1 < args.len() => {
+                old_path = args[i + 1].clone();
+                i += 2;
+            }
+            "--new" if i + 1 < args.len() => {
+                new_path = args[i + 1].clone();
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
+
+    (old_path, new_path)
+}

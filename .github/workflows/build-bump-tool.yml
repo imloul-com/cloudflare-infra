@@ -1,0 +1,85 @@
+name: Build Bump Tool Artifact
+
+# Builds the `bump_version` host binary and publishes it to GHCR as an OCI
+# artifact. App repos pull this artifact during their CI run to atomically
+# pin a freshly-built static-site SHA into `worker/apps.yaml` (the GitOps
+# alternative to the old `repository_dispatch` flow).
+#
+# Triggers on changes to the bin source, the shared catalog parser it uses,
+# and Cargo metadata. Tests must pass before publishing — the bin runs in
+# untrusted-ish CI on app repos, so the tests act as the gate.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/src/bin/bump_version.rs"
+      - "worker/src/bin/diff_versions.rs"
+      - "worker/src/catalog.rs"
+      - "worker/Cargo.toml"
+      - "worker/Cargo.lock"
+      - ".github/workflows/build-bump-tool.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: build-bump-tool-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build_and_publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: worker
+
+      - name: Run tests (gate before publish)
+        run: cargo test --bin bump_version --bin diff_versions
+
+      - name: Build bump_version (release, host target)
+        run: cargo build --release --bin bump_version
+
+      - name: Package binary
+        run: |
+          set -euo pipefail
+          mkdir -p ../release
+          # Strip to keep the artifact small; binary is statically self-
+          # contained except for glibc, which ubuntu-latest in app repos
+          # provides at compatible versions.
+          strip target/release/bump_version
+          tar -czf ../release/bump-version.tar.gz -C target/release bump_version
+
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+
+      - name: Publish bump-tool artifact to GHCR
+        working-directory: .
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/bump-version-tool"
+          short_sha="${GITHUB_SHA::12}"
+          sha_tag="sha-${short_sha}"
+
+          artifact="release/bump-version.tar.gz"
+          media_type="application/vnd.myportfolio.bump-version-tool.layer.v1+tar"
+          oras push "${image}:${sha_tag}" "${artifact}:${media_type}"
+          oras push "${image}:latest" "${artifact}:${media_type}"
