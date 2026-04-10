@@ -119,14 +119,35 @@ jobs:
           set -euo pipefail
           pairs='${{ steps.pairs.outputs.value }}'
 
-          # Drift check: every Pages project name in apps.yaml (both prod
-          # and dev) must exist in terraform/variables.tf.
+          # Drift check: every Pages project name in apps.yaml must be
+          # represented in terraform/variables.tf. Prod names are stored
+          # as literal defaults; dev names are composed in main.tf as
+          # "${var.<app>_pages_project_name}${var.dev_project_suffix}",
+          # so for dev entries we verify the prod base name is present
+          # and the trailing suffix matches dev_project_suffix.
+          apps_json=$(yq -o json '.' worker/apps.yaml)
+          dev_suffix=$(awk '/variable "dev_project_suffix"/{f=1} f && /default/{match($0,/"[^"]+"/); print substr($0,RSTART+1,RLENGTH-2); exit}' terraform/variables.tf)
+          if [ -z "$dev_suffix" ]; then
+            echo "Could not read dev_project_suffix default from terraform/variables.tf" >&2
+            exit 1
+          fi
           while IFS= read -r name; do
             if ! grep -q "\"${name}\"" terraform/variables.tf; then
-              echo "Terraform variables drift: missing project name '${name}'" >&2
+              echo "Terraform variables drift: missing prod project name '${name}'" >&2
               exit 1
             fi
-          done < <(yq -o json '.' worker/apps.yaml | jq -r '.apps[].env.prod.pages, .apps[].env.dev.pages')
+          done < <(echo "$apps_json" | jq -r '.apps[].env.prod.pages')
+          while IFS= read -r name; do
+            base="${name%${dev_suffix}}"
+            if [ "$base" = "$name" ]; then
+              echo "Terraform variables drift: dev project '${name}' does not end with suffix '${dev_suffix}'" >&2
+              exit 1
+            fi
+            if ! grep -q "\"${base}\"" terraform/variables.tf; then
+              echo "Terraform variables drift: missing prod base '${base}' for dev project '${name}'" >&2
+              exit 1
+            fi
+          done < <(echo "$apps_json" | jq -r '.apps[].env.dev.pages')
 
           if [ "$pairs" = "[]" ] || [ -z "$pairs" ]; then
             echo "No (app, environment) pairs to deploy — nothing changed."
