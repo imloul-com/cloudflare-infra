@@ -29,5 +29,5 @@ apps:
         version: prod-latest
         pages: bloom-filter
       dev:
-        version: dev-latest
+        version: sha-1e94fd4fcc3d
         pages: bloom-filter-dev
