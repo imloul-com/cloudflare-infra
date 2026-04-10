@@ -4,7 +4,7 @@ apps:
     route: /
     env:
       prod:
-        version: prod-latest
+        version: sha-f99be3989899
         pages: portfolio
       dev:
         version: sha-b54f4c2a6728
