@@ -15,7 +15,7 @@ apps:
     route: /tools/ast-viz
     env:
       prod:
-        version: prod-latest
+        version: sha-f2e537dd1377
         pages: ast-viz
       dev:
         version: sha-b1bd407df130
