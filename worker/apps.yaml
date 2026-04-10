@@ -26,7 +26,7 @@ apps:
     route: /tools/bloom-filter
     env:
       prod:
-        version: prod-latest
+        version: sha-36b6d820f5fe
         pages: bloom-filter
       dev:
         version: sha-1e94fd4fcc3d
