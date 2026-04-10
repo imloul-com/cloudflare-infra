@@ -71,7 +71,7 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
 
       - name: Publish bump-tool artifact to GHCR
-        working-directory: .
+        working-directory: release
         run: |
           set -euo pipefail
           owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
@@ -79,7 +79,7 @@ jobs:
           short_sha="${GITHUB_SHA::12}"
           sha_tag="sha-${short_sha}"
 
-          artifact="release/bump-version.tar.gz"
+          artifact="bump-version.tar.gz"
           media_type="application/vnd.myportfolio.bump-version-tool.layer.v1+tar"
           oras push "${image}:${sha_tag}" "${artifact}:${media_type}"
           oras push "${image}:latest" "${artifact}:${media_type}"
