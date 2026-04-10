@@ -18,7 +18,7 @@ apps:
         version: prod-latest
         pages: ast-viz
       dev:
-        version: dev-latest
+        version: sha-b1bd407df130
         pages: ast-viz-dev
         
   - id: bloom-filter
