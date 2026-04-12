@@ -210,7 +210,7 @@ jobs:
           echo "value=${version_override:-${{ matrix.version }}}" >> "$GITHUB_OUTPUT"
 
       - name: Setup ORAS
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Login to GHCR
         env:
