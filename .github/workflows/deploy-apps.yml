@@ -35,7 +35,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.value }}
       has_changes: ${{ steps.matrix.outputs.has_changes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Need the previous commit so `git show ${before}:worker/apps.yaml`
           # works for the diff_versions path on push events.
@@ -201,7 +201,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Determine artifact version
         id: version
