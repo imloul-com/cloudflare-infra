@@ -51,7 +51,7 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
 
     let method = req.method();
 
-    let mut new_headers = Headers::new();
+    let new_headers = Headers::new();
     for (key, val) in req.headers() {
         if key.eq_ignore_ascii_case("host") {
             continue;
@@ -67,7 +67,7 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
         init.with_body(Some(Uint8Array::from(body_bytes.as_slice()).into()));
     }
 
-    let upstream_req = Request::new_with_init(&upstream_url.to_string(), &init)?;
+    let upstream_req = Request::new_with_init(upstream_url.as_ref(), &init)?;
     let response = Fetch::Request(upstream_req).send().await?;
 
     if m.route.rewrite_to == "/" && m.route.prefix != "/" {
@@ -83,7 +83,7 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
 async fn inject_base_tag(mut response: Response, prefix: &str) -> Result<Response> {
     let status = response.status_code();
 
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     for (key, val) in response.headers() {
         headers.set(&key, &val)?;
     }

@@ -65,7 +65,7 @@ pub async fn proxy_upstream_sitemap(
     let mut upstream_resp = Fetch::Url(upstream.parse()?).send().await?;
     let status = upstream_resp.status_code();
 
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     for (key, val) in upstream_resp.headers() {
         headers.set(&key, &val)?;
     }
@@ -218,7 +218,7 @@ pub fn rewrite_sitemap_to_domain_path(xml: &str, domain_origin: &str, path_prefi
                 if inside_loc {
                     match e.unescape() {
                         Ok(t) => loc_buf.push_str(&t),
-                        Err(_) => loc_buf.push_str(&String::from_utf8_lossy(&*e)),
+                        Err(_) => loc_buf.push_str(&String::from_utf8_lossy(&e)),
                     }
                 } else {
                     write_ev!(Event::Text(e.into_owned()));

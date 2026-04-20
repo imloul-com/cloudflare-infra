@@ -81,6 +81,8 @@ struct ChangedPair {
     environment: String,
 }
 
+type ParsedVersions = Vec<(String, BTreeMap<String, String>)>;
+
 fn diff_pairs(old_text: &str, new_text: &str) -> Result<Vec<ChangedPair>, String> {
     let old = parse(old_text).map_err(|e| format!("parse old: {e}"))?;
     let new = parse(new_text).map_err(|e| format!("parse new: {e}"))?;
@@ -110,7 +112,7 @@ fn diff_pairs(old_text: &str, new_text: &str) -> Result<Vec<ChangedPair>, String
 
 /// Returns an ordered map of `app_id -> { env_key -> version }`. Order
 /// follows the YAML's apps array.
-fn parse(text: &str) -> Result<Vec<(String, BTreeMap<String, String>)>, String> {
+fn parse(text: &str) -> Result<ParsedVersions, String> {
     let parsed: CatalogShape = serde_yaml::from_str(text).map_err(|e| e.to_string())?;
     let mut out = Vec::with_capacity(parsed.apps.len());
     for app in parsed.apps {
