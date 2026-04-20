@@ -13,6 +13,9 @@ struct RouteDefinition {
     prefix: String,
     rewrite_to: String,
     project_name: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    sitemap: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

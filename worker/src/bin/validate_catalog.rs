@@ -18,6 +18,8 @@ struct AppDefinition {
     image: String,
     route: RouteConfig,
     env: EnvConfig,
+    #[serde(default)]
+    sitemap: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -126,6 +128,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
         {
             return Err(format!("invalid id '{}'", app.id).into());
+        }
+        if let Some(sitemap) = app.sitemap.as_ref() {
+            ensure_non_empty(sitemap, "sitemap")?;
+            if !sitemap.starts_with('/') {
+                return Err(format!("sitemap must start with '/': {}", sitemap).into());
+            }
         }
     }
 

@@ -34,7 +34,9 @@ pub fn normalize_origin(origin: &str) -> String {
 
 pub fn route_for_key<'a>(routes: &'a [Route], route_key: &str) -> Option<&'a Route> {
     routes.iter().find(|route| {
-        route.route_key == route_key && !route.origin.starts_with("missing-binding:")
+        route.route_key == route_key
+            && route.sitemap.is_some()
+            && !route.origin.starts_with("missing-binding:")
     })
 }
 
@@ -50,10 +52,16 @@ pub fn index_response(request_origin: &str, routes: &[Route]) -> Result<Response
 
 pub async fn proxy_upstream_sitemap(
     upstream_origin: &str,
+    upstream_path: &str,
     domain_origin: Option<&str>,
     prefix: Option<&str>,
 ) -> Result<Response> {
-    let upstream = format!("{}/sitemap.xml", normalize_origin(upstream_origin));
+    let path = if upstream_path.starts_with('/') {
+        upstream_path.to_string()
+    } else {
+        format!("/{}", upstream_path)
+    };
+    let upstream = format!("{}{}", normalize_origin(upstream_origin), path);
     let mut upstream_resp = Fetch::Url(upstream.parse()?).send().await?;
     let status = upstream_resp.status_code();
 
@@ -93,7 +101,7 @@ pub fn build_sitemap_index_xml(request_origin: &str, routes: &[Route]) -> String
 
         for route in routes
             .iter()
-            .filter(|r| !r.origin.starts_with("missing-binding:"))
+            .filter(|r| r.sitemap.is_some() && !r.origin.starts_with("missing-binding:"))
         {
             if w.write_event(Event::Start(BytesStart::new("sitemap"))).is_err()
                 || w.write_event(Event::Start(BytesStart::new("loc"))).is_err()
@@ -268,20 +276,26 @@ mod tests {
     use super::*;
     use crate::routes::Route;
 
-    fn make_route(route_key: &str, prefix: &str, origin: &str) -> Route {
+    fn make_route(route_key: &str, prefix: &str, origin: &str, sitemap: Option<&str>) -> Route {
         Route {
             route_key: route_key.to_string(),
             prefix: prefix.to_string(),
             origin: origin.to_string(),
             rewrite_to: "/".to_string(),
+            sitemap: sitemap.map(|s| s.to_string()),
         }
     }
 
     #[test]
     fn sitemap_index_points_to_dynamic_child_sitemaps() {
         let routes = vec![
-            make_route("portfolio", "/", "https://portfolio.pages.dev"),
-            make_route("ast_viz", "/tools/ast-viz", "https://worker-ast-viz.pages.dev"),
+            make_route("portfolio", "/", "https://portfolio.pages.dev", Some("/sitemap.xml")),
+            make_route(
+                "ast_viz",
+                "/tools/ast-viz",
+                "https://worker-ast-viz.pages.dev",
+                Some("/sitemap.xml"),
+            ),
         ];
         let xml = build_sitemap_index_xml("https://imloul.com", &routes);
         assert!(xml.contains("<loc>https://imloul.com/sitemaps/portfolio.xml</loc>"));
@@ -291,12 +305,33 @@ mod tests {
     #[test]
     fn sitemap_index_skips_missing_bindings() {
         let routes = vec![
-            make_route("portfolio", "/", "https://portfolio.pages.dev"),
-            make_route("broken", "/broken", "missing-binding:BROKEN_ORIGIN"),
+            make_route("portfolio", "/", "https://portfolio.pages.dev", Some("/sitemap.xml")),
+            make_route("broken", "/broken", "missing-binding:BROKEN_ORIGIN", Some("/sitemap.xml")),
         ];
         let xml = build_sitemap_index_xml("https://imloul.com", &routes);
         assert!(xml.contains("<loc>https://imloul.com/sitemaps/portfolio.xml</loc>"));
         assert!(!xml.contains("/sitemaps/broken.xml"));
+    }
+
+    #[test]
+    fn sitemap_index_skips_routes_without_sitemap() {
+        let routes = vec![
+            make_route("portfolio", "/", "https://portfolio.pages.dev", Some("/sitemap.xml")),
+            make_route("bloom", "/tools/bloom", "https://bloom.pages.dev", None),
+        ];
+        let xml = build_sitemap_index_xml("https://imloul.com", &routes);
+        assert!(xml.contains("<loc>https://imloul.com/sitemaps/portfolio.xml</loc>"));
+        assert!(!xml.contains("/sitemaps/bloom.xml"));
+    }
+
+    #[test]
+    fn route_for_key_requires_configured_sitemap() {
+        let routes = vec![
+            make_route("portfolio", "/", "https://portfolio.pages.dev", Some("/sitemap.xml")),
+            make_route("bloom", "/tools/bloom", "https://bloom.pages.dev", None),
+        ];
+        assert!(route_for_key(&routes, "portfolio").is_some());
+        assert!(route_for_key(&routes, "bloom").is_none());
     }
 
     #[test]

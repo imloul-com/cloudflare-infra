@@ -2,6 +2,7 @@ apps:
   - id: aimloul-blog
     image: ghcr.io/imloul-com/aimloul-blog-static
     route: /
+    sitemap: /sitemap.xml
     env:
       prod:
         version: sha-f99be3989899
@@ -20,7 +21,7 @@ apps:
       dev:
         version: sha-b1bd407df130
         pages: ast-viz-dev
-        
+
   - id: bloom-filter
     image: ghcr.io/imloul-com/bloom-filter-static
     route: /tools/bloom-filter

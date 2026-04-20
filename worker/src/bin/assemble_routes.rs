@@ -14,6 +14,8 @@ struct AppDefinition {
     id: String,
     route: RouteConfig,
     env: EnvConfig,
+    #[serde(default)]
+    sitemap: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +38,8 @@ struct RouteDefinition {
     prefix: String,
     rewrite_to: String,
     project_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sitemap: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -62,6 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             prefix: route.path_match,
             rewrite_to: route.rewrite,
             project_name: env_entry.pages.clone(),
+            sitemap: source.sitemap,
         });
     }
 

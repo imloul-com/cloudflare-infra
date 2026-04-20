@@ -75,12 +75,14 @@ mod tests {
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://worker-ast-viz.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
+                sitemap: None,
             },
             Route {
                 route_key: "portfolio".to_string(),
                 prefix: "/".to_string(),
                 origin: "https://portfolio.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
+                sitemap: None,
             },
         ]
     }
@@ -152,18 +154,21 @@ mod tests {
                 prefix: "/tools/ast-viz".to_string(),
                 origin: "https://ast.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
+                sitemap: None,
             },
             Route {
                 route_key: "tools".to_string(),
                 prefix: "/tools".to_string(),
                 origin: "https://tools.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
+                sitemap: None,
             },
             Route {
                 route_key: "root".to_string(),
                 prefix: "/".to_string(),
                 origin: "https://root.pages.dev".to_string(),
                 rewrite_to: "/".to_string(),
+                sitemap: None,
             },
         ];
         assert_eq!(

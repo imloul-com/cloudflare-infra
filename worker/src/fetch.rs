@@ -44,8 +44,13 @@ pub async fn handle(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             } else {
                 Some(route.prefix.as_str())
             };
+            let sitemap_path = route
+                .sitemap
+                .as_deref()
+                .expect("route_for_key filters to routes with a configured sitemap");
             return sitemap::proxy_upstream_sitemap(
                 &route.origin,
+                sitemap_path,
                 Some(&request_origin),
                 rewrite_prefix,
             )

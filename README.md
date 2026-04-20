@@ -11,6 +11,7 @@ imloul.com/*
 domain-router Worker (Rust, wasm)
     │
     ├── /tools/ast-viz/*  → ast-viz Pages (prefix rewritten to `/`, <base> tag injected)
+    ├── /tools/bloom-filter/*  → bloom-filter Pages (prefix rewritten to `/`, <base> tag injected)
     └── everything else   → portfolio Pages (passthrough)
 ```
 
@@ -38,7 +39,9 @@ The router and infra workflows derive route definitions and upstream origin reso
 The router Worker serves a domain-level sitemap index so search engines can discover URLs from multiple app origins under one domain:
 
 - `https://imloul.com/sitemap.xml` (sitemap index)
-- `https://imloul.com/sitemaps/{routeKey}.xml` (one child sitemap per route key in the catalog)
+- `https://imloul.com/sitemaps/{routeKey}.xml` (one child sitemap per app that declares a `sitemap` path in `apps.yaml`)
+
+Each app opts in by setting `sitemap: /path-to-sitemap.xml` on its entry in `apps.yaml`. Apps without the field are excluded from the index, and their `/sitemaps/{routeKey}.xml` path returns 404.
 
 For non-root prefixes (for example `ast-viz` at `/tools/ast-viz`), sitemap `<loc>` URLs are rewritten to the domain path (`https://imloul.com/tools/ast-viz/...`).
 

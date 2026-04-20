@@ -10,6 +10,8 @@ struct RouteDefinition {
     prefix: String,
     rewrite_to: String,
     project_name: String,
+    #[serde(default)]
+    sitemap: Option<String>,
 }
 
 #[derive(Clone)]
@@ -18,6 +20,7 @@ pub struct Route {
     pub prefix: String,
     pub origin: String,
     pub rewrite_to: String,
+    pub sitemap: Option<String>,
 }
 
 thread_local! {
@@ -71,6 +74,7 @@ fn parse_routes(env: &Env) -> Result<Vec<Route>, String> {
             route_key: def.route_key.clone(),
             prefix: def.prefix,
             rewrite_to: def.rewrite_to,
+            sitemap: def.sitemap,
             origin: env
                 .var(&origin_var_name(&def.route_key))
                 .map(|v| v.to_string())
@@ -98,6 +102,11 @@ fn validate_route_definition(def: &RouteDefinition) -> Result<(), String> {
     }
     if def.project_name.trim().is_empty() {
         return Err("projectName must be non-empty".to_string());
+    }
+    if let Some(sitemap) = def.sitemap.as_ref() {
+        if !sitemap.starts_with('/') {
+            return Err("sitemap must start with '/'".to_string());
+        }
     }
     Ok(())
 }
