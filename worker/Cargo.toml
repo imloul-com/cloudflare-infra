@@ -16,4 +16,4 @@ url = ">=2.5, <3"
 js-sys = "0.3"
 wasm-bindgen = "=0.2.105"
 quick-xml = { version = "0.37", default-features = false }
-lol_html = { version = "2.7.2", default-features = false }
+lol_html = { version = "2.8.1", default-features = false }
