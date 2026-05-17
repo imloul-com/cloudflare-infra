@@ -136,7 +136,7 @@ jobs:
           printf "\n[vars]\nROUTE_DEFINITIONS = '%s'\n" "$route_defs" >> wrangler.deploy.generated.toml
 
       - name: Deploy router worker
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
