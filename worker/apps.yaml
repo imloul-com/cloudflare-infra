@@ -8,7 +8,7 @@ apps:
         version: sha-2100f0df1f47
         pages: portfolio
       dev:
-        version: sha-7ed1b4823414
+        version: sha-71e1d303f5c6
         pages: portfolio-dev
 
   - id: ast-viz
