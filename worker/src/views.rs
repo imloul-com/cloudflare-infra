@@ -80,10 +80,12 @@ pub fn prepare_hit(req: &Request, pathname: &str) -> Option<HitInput> {
     let headers = req.headers();
     let header = |name: &str| headers.get(name).ok().flatten().unwrap_or_default();
 
-    // Real navigations only. Sec-Fetch-Dest is absent on older browsers, so fall
+    // Real navigations only. Sec-Fetch-Dest is absent on older browsers, and a
+    // link prefetch reports `empty` rather than `document`, so in both cases fall
     // back to content negotiation rather than dropping those visitors entirely.
+    let is_prefetch = header("sec-purpose").contains("prefetch");
     let dest = header("sec-fetch-dest");
-    if dest.is_empty() {
+    if dest.is_empty() || (is_prefetch && dest != "document") {
         if !header("accept").contains("text/html") {
             return None;
         }
@@ -104,7 +106,7 @@ pub fn prepare_hit(req: &Request, pathname: &str) -> Option<HitInput> {
         path: normalize_path(pathname),
         ip: header("cf-connecting-ip"),
         user_agent,
-        countable: !header("sec-purpose").contains("prefetch"),
+        countable: !is_prefetch,
     })
 }
 
