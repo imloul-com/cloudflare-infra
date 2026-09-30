@@ -1,10 +1,12 @@
 pub mod catalog;
 mod constants;
+pub mod counters;
 mod errors;
 mod fetch;
 mod router;
 mod routes;
 mod sitemap;
+mod views;
 
 use worker::*;
 

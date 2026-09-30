@@ -4,3 +4,12 @@ compatibility_date = "2025-04-01"
 
 [build]
 command = "worker-build --release"
+
+[[durable_objects.bindings]]
+name = "COUNTERS"
+class_name = "Counters"
+
+# SQLite-backed classes are the only kind available on the Workers Free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Counters"]

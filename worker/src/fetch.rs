@@ -3,6 +3,7 @@ use crate::errors::router_error;
 use crate::router;
 use crate::routes;
 use crate::sitemap;
+use crate::views;
 use serde_json::json;
 use worker::*;
 
@@ -105,8 +106,44 @@ pub async fn handle(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 return router_error("Route origin causes proxy loop", 503, "proxy_loop_detected");
             }
 
-            match router::proxy_request(req, m).await {
+            let base_href = (m.route.rewrite_to == "/" && m.route.prefix != "/")
+                .then(|| router::base_href_for(&m.route.prefix));
+
+            // Counting is a round trip to the Durable Object and proxying is a
+            // round trip to the origin. Run them together so the view count
+            // costs roughly nothing on top of the upstream fetch.
+            let hit = views::prepare_hit(&req, &pathname);
+            let lookup = views::lookup_paths(&pathname, &route_list);
+            let counting = async {
+                let hit = hit?;
+                match views::record(&env, hit, lookup).await {
+                    Ok(counts) => Some(counts),
+                    Err(err) => {
+                        console_error!(
+                            "{}",
+                            json!({
+                                "event": "view_count_error",
+                                "pathname": &pathname,
+                                "error": err.to_string(),
+                            })
+                        );
+                        None
+                    }
+                }
+            };
+
+            let (proxied, view_count) =
+                futures_util::join!(router::proxy_request(req, m), counting);
+
+            match proxied {
                 Ok(response) => {
+                    let status = response.status_code();
+                    let logged_views = view_count.as_ref().map(|c| c.current);
+                    let views_for_page = view_count.filter(|_| status == 200);
+                    let response =
+                        router::rewrite_html(response, base_href.as_deref(), views_for_page.as_ref())
+                            .await?;
+
                     let elapsed = Date::now().as_millis() - start;
                     console_log!(
                         "{}",
@@ -117,7 +154,8 @@ pub async fn handle(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                             "matched_prefix": &matched_prefix,
                             "upstream": &upstream_origin,
                             "upstream_path": &upstream_path,
-                            "status": response.status_code(),
+                            "status": status,
+                            "views": logged_views,
                             "duration_ms": elapsed,
                         })
                     );

@@ -4,6 +4,7 @@ use lol_html::{element, rewrite_str, RewriteStrSettings};
 use worker::{console_error, Fetch, Headers, Request, RequestInit, Response, Result};
 
 use super::matcher::RouteMatch;
+use crate::views::{format_count, Counts};
 
 fn escape_html_attr_value(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
@@ -19,26 +20,51 @@ fn escape_html_attr_value(value: &str) -> String {
     out
 }
 
-/// Injects `<base href="...">` as the first content inside `<head>` using [lol_html] (selector +
-/// streaming rewriter), tolerating real-world HTML. On failure, logs and returns the original HTML.
+/// Single [lol_html] pass that prepends `<base href="...">` inside `<head>` and
+/// fills `[data-views]` elements with the page's view count. Either half is
+/// optional. On failure, logs and returns the original HTML.
 ///
 /// [lol_html]: https://docs.rs/lol_html/
-fn inject_base_into_head(html: &str, base_href: &str) -> String {
-    let safe = escape_html_attr_value(base_href);
-    match rewrite_str(html, RewriteStrSettings {
-        element_content_handlers: vec![element!("head", move |el| {
-            let snippet = format!("<base href=\"{safe}\">");
-            el.prepend(&snippet, ContentType::Html);
+fn rewrite_html_str(html: &str, base_href: Option<&str>, views: Option<&Counts>) -> String {
+    let mut handlers = Vec::new();
+
+    if let Some(href) = base_href {
+        let safe = escape_html_attr_value(href);
+        handlers.push(element!("head", move |el| {
+            el.prepend(&format!("<base href=\"{safe}\">"), ContentType::Html);
             Ok(())
-        })],
+        }));
+    }
+
+    if let Some(counts) = views {
+        let rendered = format_count(counts.current);
+        handlers.push(element!("[data-views]", move |el| {
+            el.set_inner_content(&rendered, ContentType::Text);
+            Ok(())
+        }));
+
+        // Index pages carry the counts of the pages they link to.
+        handlers.push(element!("[data-views-for]", move |el| {
+            if let Some(path) = el.get_attribute("data-views-for") {
+                if let Some(count) = counts.lookup.get(&path) {
+                    el.set_inner_content(&format_count(*count), ContentType::Text);
+                }
+            }
+            Ok(())
+        }));
+    }
+
+    if handlers.is_empty() {
+        return html.to_string();
+    }
+
+    match rewrite_str(html, RewriteStrSettings {
+        element_content_handlers: handlers,
         ..RewriteStrSettings::new()
     }) {
         Ok(out) => out,
         Err(e) => {
-            console_error!(
-                "base tag injection failed (lol_html), serving unmodified HTML: {}",
-                e
-            );
+            console_error!("html rewrite failed (lol_html), serving unmodified HTML: {}", e);
             html.to_string()
         }
     }
@@ -68,44 +94,58 @@ pub async fn proxy_request(mut req: Request, m: RouteMatch) -> Result<Response> 
     }
 
     let upstream_req = Request::new_with_init(upstream_url.as_ref(), &init)?;
-    let response = Fetch::Request(upstream_req).send().await?;
-
-    if m.route.rewrite_to == "/" && m.route.prefix != "/" {
-        let content_type = response.headers().get("content-type")?.unwrap_or_default();
-        if content_type.contains("text/html") {
-            return inject_base_tag(response, &m.route.prefix).await;
-        }
-    }
-
-    Ok(response)
+    Fetch::Request(upstream_req).send().await
 }
 
-async fn inject_base_tag(mut response: Response, prefix: &str) -> Result<Response> {
-    let status = response.status_code();
+/// Applies the HTML rewrites to a proxied response, passing non-HTML through untouched.
+pub async fn rewrite_html(
+    mut response: Response,
+    base_href: Option<&str>,
+    views: Option<&Counts>,
+) -> Result<Response> {
+    if base_href.is_none() && views.is_none() {
+        return Ok(response);
+    }
 
+    let content_type = response.headers().get("content-type")?.unwrap_or_default();
+    if !content_type.contains("text/html") {
+        return Ok(response);
+    }
+
+    let status = response.status_code();
     let headers = Headers::new();
     for (key, val) in response.headers() {
         headers.set(&key, &val)?;
     }
 
     let html = response.text().await?;
-
-    let base_href = if prefix.ends_with('/') {
-        prefix.to_string()
-    } else {
-        format!("{}/", prefix)
-    };
-    let injected = inject_base_into_head(&html, &base_href);
-    let body_bytes = injected.into_bytes();
+    let body_bytes = rewrite_html_str(&html, base_href, views).into_bytes();
 
     headers.set("content-length", &body_bytes.len().to_string())?;
 
     Response::from_bytes(body_bytes).map(|r| r.with_headers(headers).with_status(status))
 }
 
+/// Normalizes a route prefix into a `<base href>` value.
+pub fn base_href_for(prefix: &str) -> String {
+    if prefix.ends_with('/') {
+        prefix.to_string()
+    } else {
+        format!("{prefix}/")
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{escape_html_attr_value, inject_base_into_head};
+    use super::{base_href_for, escape_html_attr_value, rewrite_html_str};
+    use crate::views::Counts;
+
+    fn counts(current: u64) -> Counts {
+        Counts {
+            current,
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn escape_attr_escapes_specials() {
@@ -118,7 +158,7 @@ mod tests {
     #[test]
     fn inject_base_prepends_inside_head() {
         let html = "<!DOCTYPE html><html><head><title>T</title></head><body></body></html>";
-        let out = inject_base_into_head(html, "/tools/ast-viz/");
+        let out = rewrite_html_str(html, Some("/tools/ast-viz/"), None);
         assert!(out.contains("href=\"/tools/ast-viz/\"") || out.contains("href='/tools/ast-viz/'"));
         let base_pos = out.find("<base").expect("base tag");
         let title_pos = out.find("<title").expect("title");
@@ -128,7 +168,7 @@ mod tests {
     #[test]
     fn inject_base_with_head_attributes() {
         let html = "<html><head lang=\"en\"><title>T</title></head></html>";
-        let out = inject_base_into_head(html, "/tools/");
+        let out = rewrite_html_str(html, Some("/tools/"), None);
         assert!(out.contains("/tools/"));
         assert!(out.contains("lang=\"en\"") || out.contains("lang='en'"));
     }
@@ -136,8 +176,71 @@ mod tests {
     #[test]
     fn inject_base_whitespace_in_head() {
         let html = "<html><head>\n  <title>T</title>\n</head></html>";
-        let out = inject_base_into_head(html, "/p/");
+        let out = rewrite_html_str(html, Some("/p/"), None);
         assert!(out.contains("/p/"));
         assert!(out.contains("<title"));
+    }
+
+    #[test]
+    fn fills_views_placeholder() {
+        let html = "<html><body><span data-views></span></body></html>";
+        let out = rewrite_html_str(html, None, Some(&counts(1_234)));
+        assert!(out.contains(">1,234<"));
+    }
+
+    #[test]
+    fn fills_every_views_placeholder() {
+        let html = "<body><span data-views></span><i data-views>x</i></body>";
+        let out = rewrite_html_str(html, None, Some(&counts(7)));
+        assert_eq!(out.matches(">7<").count(), 2);
+    }
+
+    #[test]
+    fn views_content_is_text_escaped() {
+        let html = "<span data-views></span>";
+        let out = rewrite_html_str(html, None, Some(&counts(0)));
+        assert!(out.contains(">0<"));
+    }
+
+    #[test]
+    fn leaves_placeholder_empty_without_count() {
+        let html = "<span data-views></span>";
+        let out = rewrite_html_str(html, None, None);
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn applies_base_and_views_together() {
+        let html = "<html><head><title>T</title></head><body><b data-views></b></body></html>";
+        let out = rewrite_html_str(html, Some("/tools/x/"), Some(&counts(42)));
+        assert!(out.contains("<base"));
+        assert!(out.contains(">42<"));
+    }
+
+    #[test]
+    fn fills_lookup_counts_by_path() {
+        let mut c = counts(1);
+        c.lookup.insert("/tools/ast-viz".into(), 4_210);
+        c.lookup.insert("/tools/bloom-filter".into(), 77);
+        let html = concat!(
+            "<a data-views-for=\"/tools/ast-viz\"></a>",
+            "<a data-views-for=\"/tools/bloom-filter\"></a>",
+        );
+        let out = rewrite_html_str(html, None, Some(&c));
+        assert!(out.contains(">4,210<"));
+        assert!(out.contains(">77<"));
+    }
+
+    #[test]
+    fn leaves_unknown_lookup_path_untouched() {
+        let html = "<a data-views-for=\"/tools/nope\"></a>";
+        let out = rewrite_html_str(html, None, Some(&counts(1)));
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn base_href_gets_trailing_slash() {
+        assert_eq!(base_href_for("/tools/ast-viz"), "/tools/ast-viz/");
+        assert_eq!(base_href_for("/tools/ast-viz/"), "/tools/ast-viz/");
     }
 }
