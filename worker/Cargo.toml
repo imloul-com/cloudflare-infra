@@ -2,6 +2,8 @@
 name = "domain-router"
 version = "0.1.0"
 edition = "2021"
+# Matches the toolchain pinned in CI, so clippy stops suggesting newer std APIs.
+rust-version = "1.86"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
