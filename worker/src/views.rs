@@ -32,7 +32,9 @@ const CRAWLER_MARKERS: [&str; 12] = [
 #[derive(Serialize, Deserialize)]
 pub struct Hit {
     pub path: String,
-    pub token: String,
+    /// Identifies the visitor for dedupe. `None` reads the count without
+    /// recording a visit, which is what a prefetch gets.
+    pub token: Option<String>,
     pub day: u64,
     /// Extra paths to read without incrementing, so an index page can show the
     /// counts of the pages it links to in the same round trip.
@@ -51,6 +53,7 @@ pub struct HitInput {
     pub path: String,
     ip: String,
     user_agent: String,
+    countable: bool,
 }
 
 pub fn day_bucket(now_ms: f64) -> u64 {
@@ -88,20 +91,20 @@ pub fn prepare_hit(req: &Request, pathname: &str) -> Option<HitInput> {
         return None;
     }
 
-    if header("sec-purpose").contains("prefetch") {
-        return None;
-    }
-
     let user_agent = header("user-agent");
     let lowered = user_agent.to_lowercase();
     if lowered.is_empty() || CRAWLER_MARKERS.iter().any(|m| lowered.contains(m)) {
         return None;
     }
 
+    // A prefetched page still has to render its count, because the browser may
+    // show exactly this response. It must not record a visit, though, since the
+    // reader may never navigate to it.
     Some(HitInput {
         path: normalize_path(pathname),
         ip: header("cf-connecting-ip"),
         user_agent,
+        countable: !header("sec-purpose").contains("prefetch"),
     })
 }
 
@@ -163,7 +166,11 @@ pub async fn record(env: &Env, input: HitInput, lookup: Vec<String>) -> Result<C
 
     let day = day_bucket(Date::now().as_millis() as f64);
     let hit = Hit {
-        token: token(&input, &salt, day).await?,
+        token: if input.countable {
+            Some(token(&input, &salt, day).await?)
+        } else {
+            None
+        },
         path: input.path,
         day,
         lookup,

@@ -34,17 +34,18 @@ impl DurableObject for Counters {
         let storage = self.state.storage();
 
         let current_key = count_key(&hit.path);
-        let seen_key = seen_key(hit.day, &hit.token);
-
         let mut current: u64 = storage.get(&current_key).await?.unwrap_or(0);
 
-        if storage.get::<u8>(&seen_key).await?.is_none() {
-            current += 1;
-            storage.put(&current_key, current).await?;
-            storage.put(&seen_key, 1u8).await?;
+        if let Some(token) = &hit.token {
+            let seen_key = seen_key(hit.day, token);
+            if storage.get::<u8>(&seen_key).await?.is_none() {
+                current += 1;
+                storage.put(&current_key, current).await?;
+                storage.put(&seen_key, 1u8).await?;
 
-            if storage.get_alarm().await?.is_none() {
-                storage.set_alarm(Duration::from_secs(86_400)).await?;
+                if storage.get_alarm().await?.is_none() {
+                    storage.set_alarm(Duration::from_secs(86_400)).await?;
+                }
             }
         }
 
