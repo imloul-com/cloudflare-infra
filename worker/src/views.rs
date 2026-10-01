@@ -69,29 +69,24 @@ pub fn normalize_path(pathname: &str) -> String {
     }
 }
 
-/// Extracts everything needed to count this request, or `None` if it is not a
-/// countable human pageview. Returns owned data so the caller can hand the
-/// request itself to the proxy and run both concurrently.
+/// Static assets carry a file extension on the last path segment; document URLs
+/// do not. Filtering on the path keeps subresources out of the counter without
+/// relying on request headers, which intermediaries do not preserve.
+pub fn looks_like_document(pathname: &str) -> bool {
+    let last = pathname.rsplit('/').next().unwrap_or_default();
+    last.is_empty() || !last.contains('.') || last.ends_with(".html")
+}
+
+/// Extracts everything needed to render and possibly count this request, or
+/// `None` if it is not a document request from a human. Returns owned data so
+/// the caller can hand the request itself to the proxy and run both concurrently.
 pub fn prepare_hit(req: &Request, pathname: &str) -> Option<HitInput> {
-    if req.method() != Method::Get {
+    if req.method() != Method::Get || !looks_like_document(pathname) {
         return None;
     }
 
     let headers = req.headers();
     let header = |name: &str| headers.get(name).ok().flatten().unwrap_or_default();
-
-    // Real navigations only. Sec-Fetch-Dest is absent on older browsers, and a
-    // link prefetch reports `empty` rather than `document`, so in both cases fall
-    // back to content negotiation rather than dropping those visitors entirely.
-    let is_prefetch = header("sec-purpose").contains("prefetch");
-    let dest = header("sec-fetch-dest");
-    if dest.is_empty() || (is_prefetch && dest != "document") {
-        if !header("accept").contains("text/html") {
-            return None;
-        }
-    } else if dest != "document" {
-        return None;
-    }
 
     let user_agent = header("user-agent");
     let lowered = user_agent.to_lowercase();
@@ -99,14 +94,16 @@ pub fn prepare_hit(req: &Request, pathname: &str) -> Option<HitInput> {
         return None;
     }
 
-    // A prefetched page still has to render its count, because the browser may
-    // show exactly this response. It must not record a visit, though, since the
-    // reader may never navigate to it.
+    // Rendering the count must not depend on request headers. A service worker or
+    // a prefetch re-issues the navigation without them, and the count-less HTML it
+    // receives is what the reader is then served from cache. Only the decision to
+    // record a visit reads headers, and only to exclude prefetches, which the
+    // reader may never actually open.
     Some(HitInput {
         path: normalize_path(pathname),
         ip: header("cf-connecting-ip"),
         user_agent,
-        countable: !is_prefetch,
+        countable: !header("sec-purpose").contains("prefetch"),
     })
 }
 
