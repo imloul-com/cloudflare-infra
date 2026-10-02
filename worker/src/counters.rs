@@ -9,6 +9,10 @@ use crate::views::{Counts, Hit};
 const DEDUPE_RETAIN_DAYS: u64 = 2;
 const PRUNE_BATCH: usize = 128;
 
+/// Caps the fan-out of a listing-page scan. `/` matches every count on the site,
+/// so without a bound one request could read unboundedly many keys.
+const LOOKUP_LIMIT: usize = 500;
+
 fn count_key(path: &str) -> String {
     format!("c:{path}")
 }
@@ -49,14 +53,20 @@ impl DurableObject for Counters {
             }
         }
 
-        let mut lookup = HashMap::with_capacity(hit.lookup.len());
-        for path in hit.lookup {
-            let value = if path == hit.path {
-                current
-            } else {
-                storage.get(&count_key(&path)).await?.unwrap_or(0)
-            };
-            lookup.insert(path, value);
+        let mut lookup = HashMap::new();
+        if !hit.lookup_prefix.is_empty() {
+            let scan = count_key(&hit.lookup_prefix);
+            let nested = storage
+                .list_with_options(ListOptions::new().prefix(&scan).limit(LOOKUP_LIMIT))
+                .await?;
+
+            nested.for_each(&mut |value, key| {
+                if let (Some(key), Some(value)) = (key.as_string(), value.as_f64()) {
+                    if let Some(path) = key.strip_prefix("c:") {
+                        lookup.insert(path.to_string(), value as u64);
+                    }
+                }
+            });
         }
 
         Response::from_json(&Counts { current, lookup })

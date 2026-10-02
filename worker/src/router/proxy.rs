@@ -4,7 +4,7 @@ use lol_html::{element, rewrite_str, RewriteStrSettings};
 use worker::{console_error, Fetch, Headers, Request, RequestInit, Response, Result};
 
 use super::matcher::RouteMatch;
-use crate::views::{format_count, Counts};
+use crate::views::{format_count, normalize_path, Counts};
 
 fn escape_html_attr_value(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
@@ -43,10 +43,11 @@ fn rewrite_html_str(html: &str, base_href: Option<&str>, views: Option<&Counts>)
             Ok(())
         }));
 
-        // Index pages carry the counts of the pages they link to.
+        // Listing pages carry the counts of the pages they link to. Normalizing
+        // the attribute lets templates pass a permalink straight through.
         handlers.push(element!("[data-views-for]", move |el| {
             if let Some(path) = el.get_attribute("data-views-for") {
-                if let Some(count) = counts.lookup.get(&path) {
+                if let Some(count) = counts.lookup.get(&normalize_path(&path)) {
                     el.set_inner_content(&format_count(*count), ContentType::Text);
                 }
             }

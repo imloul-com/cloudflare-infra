@@ -4,8 +4,6 @@ use worker::crypto::{DigestStream, DigestStreamAlgorithm};
 use worker::worker_sys::web_sys;
 use worker::*;
 
-use crate::routes::Route;
-
 pub const COUNTERS_BINDING: &str = "COUNTERS";
 pub const SALT_BINDING: &str = "VIEW_SALT";
 
@@ -36,10 +34,10 @@ pub struct Hit {
     /// recording a visit, which is what a prefetch gets.
     pub token: Option<String>,
     pub day: u64,
-    /// Extra paths to read without incrementing, so an index page can show the
-    /// counts of the pages it links to in the same round trip.
+    /// Path prefix whose nested counts to read without incrementing, so a listing
+    /// page can show the counts of the pages it links to in the same round trip.
     #[serde(default)]
-    pub lookup: Vec<String>,
+    pub lookup_prefix: String,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -107,24 +105,19 @@ pub fn prepare_hit(req: &Request, pathname: &str) -> Option<HitInput> {
     })
 }
 
-/// Counts for the routes nested directly beneath the requested path, so an
-/// index page can render a count for each page it links to.
+/// Prefix covering everything nested beneath the requested path, so a listing
+/// page can render a count for each page it links to.
 ///
-/// Derived from the route table rather than any hardcoded path, so upstream
-/// apps can rename or restructure their URLs without a change here.
-pub fn lookup_paths(pathname: &str, routes: &[Route]) -> Vec<String> {
+/// Scanning by prefix rather than enumerating paths means articles are picked up
+/// as soon as they have a view, with no route entry or redeploy here. The
+/// trailing slash keeps `/blog` from also matching `/blogroll`.
+pub fn lookup_prefix(pathname: &str) -> String {
     let current = normalize_path(pathname);
-    let child_prefix = if current == "/" {
-        "/".to_string()
+    if current == "/" {
+        current
     } else {
         format!("{current}/")
-    };
-
-    routes
-        .iter()
-        .map(|r| normalize_path(&r.prefix))
-        .filter(|p| *p != current && p.starts_with(&child_prefix))
-        .collect()
+    }
 }
 
 /// Cookieless per-visitor-per-path token. The day bucket is part of the digest,
@@ -156,8 +149,8 @@ async fn token(input: &HitInput, salt: &str, day: u64) -> Result<String> {
 }
 
 /// Records the hit and returns the path's view count including this one, plus
-/// the counts of any `lookup` paths.
-pub async fn record(env: &Env, input: HitInput, lookup: Vec<String>) -> Result<Counts> {
+/// the counts of every path nested beneath it.
+pub async fn record(env: &Env, input: HitInput) -> Result<Counts> {
     let salt = env
         .secret(SALT_BINDING)
         .map(|s| s.to_string())
@@ -170,9 +163,9 @@ pub async fn record(env: &Env, input: HitInput, lookup: Vec<String>) -> Result<C
         } else {
             None
         },
+        lookup_prefix: lookup_prefix(&input.path),
         path: input.path,
         day,
-        lookup,
     };
 
     let stub = env
@@ -203,63 +196,34 @@ pub fn format_count(count: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{day_bucket, format_count, lookup_paths, normalize_path};
-    use crate::routes::Route;
+    use super::{day_bucket, format_count, lookup_prefix, normalize_path};
 
-    fn route(prefix: &str) -> Route {
-        Route {
-            route_key: prefix.trim_matches('/').replace('/', "_"),
-            prefix: prefix.to_string(),
-            origin: "https://example.pages.dev".to_string(),
-            rewrite_to: "/".to_string(),
-            sitemap: None,
-        }
-    }
-
-    fn sample_routes() -> Vec<Route> {
-        vec![
-            route("/tools/ast-viz"),
-            route("/tools/bloom-filter"),
-            route("/"),
-        ]
+    #[test]
+    fn lookup_prefix_matches_nested_paths() {
+        assert_eq!(lookup_prefix("/blog"), "/blog/");
     }
 
     #[test]
-    fn lookup_returns_nested_routes() {
-        let mut found = lookup_paths("/tools", &sample_routes());
-        found.sort();
-        assert_eq!(found, vec!["/tools/ast-viz", "/tools/bloom-filter"]);
+    fn lookup_prefix_accepts_trailing_slash_form() {
+        assert_eq!(lookup_prefix("/blog/"), "/blog/");
+    }
+
+    /// A bare `/blog` prefix would also pull in `/blogroll`.
+    #[test]
+    fn lookup_prefix_excludes_sibling_sections() {
+        assert!(!"/blogroll".starts_with(&lookup_prefix("/blog")));
+        assert!("/blog/a-post".starts_with(&lookup_prefix("/blog")));
     }
 
     #[test]
-    fn lookup_matches_trailing_slash_form() {
-        assert_eq!(lookup_paths("/tools/", &sample_routes()).len(), 2);
+    fn lookup_prefix_excludes_the_page_itself() {
+        assert!(!"/blog".starts_with(&lookup_prefix("/blog")));
     }
 
     #[test]
-    fn lookup_excludes_the_page_itself() {
-        assert!(!lookup_paths("/tools/ast-viz", &sample_routes())
-            .contains(&"/tools/ast-viz".to_string()));
-    }
-
-    #[test]
-    fn lookup_is_empty_for_leaf_pages() {
-        assert!(lookup_paths("/blog/some-post", &sample_routes()).is_empty());
-    }
-
-    #[test]
-    fn lookup_from_root_covers_all_other_routes() {
-        let mut found = lookup_paths("/", &sample_routes());
-        found.sort();
-        assert_eq!(found, vec!["/tools/ast-viz", "/tools/bloom-filter"]);
-    }
-
-    /// Renaming a section upstream must not require a change in this repo.
-    #[test]
-    fn lookup_follows_renamed_sections() {
-        let renamed = vec![route("/utilities/ast-viz"), route("/")];
-        assert_eq!(lookup_paths("/utilities", &renamed), vec!["/utilities/ast-viz"]);
-        assert!(lookup_paths("/tools", &renamed).is_empty());
+    fn lookup_prefix_from_root_covers_everything() {
+        assert_eq!(lookup_prefix("/"), "/");
+        assert!("/blog/a-post".starts_with(&lookup_prefix("/")));
     }
 
     #[test]

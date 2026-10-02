@@ -113,10 +113,9 @@ pub async fn handle(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             // round trip to the origin. Run them together so the view count
             // costs roughly nothing on top of the upstream fetch.
             let hit = views::prepare_hit(&req, &pathname);
-            let lookup = views::lookup_paths(&pathname, &route_list);
             let counting = async {
                 let hit = hit?;
-                match views::record(&env, hit, lookup).await {
+                match views::record(&env, hit).await {
                     Ok(counts) => Some(counts),
                     Err(err) => {
                         console_error!(
