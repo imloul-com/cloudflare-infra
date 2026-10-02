@@ -5,7 +5,7 @@ apps:
     sitemap: /sitemap.xml
     env:
       prod:
-        version: sha-4571623d8789
+        version: sha-4cee317c09b4
         pages: portfolio
       dev:
         version: sha-93402afd01eb
